@@ -68,10 +68,10 @@ class BattalionController(Node):
         dy = target_pose[1] - current_pose.y
         distance = math.sqrt((dx*dx + dy*dy))
         desired_theta =self.angle_restrict(math.atan2(dy,dx) - current_pose.theta)
-        kp_distance = 0.22
-        kp_theta = 1.8
+        kp_distance = 0.222
+        kp_theta = 1.551
         angle = kp_theta * desired_theta
-        if distance < 0.01:
+        if distance < 0.12:
             print (target_pose)
             if bot == 1:
                 self.num = min(49,self.num+1)
@@ -83,8 +83,8 @@ class BattalionController(Node):
             v = 0.0
         else:
             v = kp_distance * distance
-            if v > 0.5:
-                v = 1.1
+            if v > 0.59:
+                v = 1.11
         
         vel.linear.x = v
         vel.angular.z = angle
