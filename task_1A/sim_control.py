@@ -29,7 +29,7 @@ class BattalionController(Node):
         self.targets_glacio = []
         self.targets_crystal = []
         self.targets_frostbite = []
-
+        self.previous_theta = {1:0.0 , 2:0.0, 3:0.0}
         self.current_pose_glacio = None
         self.current_pose_crystal = None
         self.current_pose_frostbite = None
@@ -68,10 +68,13 @@ class BattalionController(Node):
         dy = target_pose[1] - current_pose.y
         distance = math.sqrt((dx*dx + dy*dy))
         desired_theta =self.angle_restrict(math.atan2(dy,dx) - current_pose.theta)
+        error_theta = (desired_theta - self.previous_theta[bot]) / 0.1
+        self.previous_theta[bot] = desired_theta
         kp_distance = 0.222
-        kp_theta = 1.551
-        angle = kp_theta * desired_theta
-        if distance < 0.12:
+        kp_theta = 1.11
+        kd_theta = 0.34
+        angle = kp_theta * desired_theta + (kd_theta * error_theta)
+        if distance < 0.01:
             print (target_pose)
             if bot == 1:
                 self.num = min(49,self.num+1)
@@ -79,11 +82,11 @@ class BattalionController(Node):
                 self.num1 = min(49,self.num1+1)
             else:
                 self.num2 = min(49,self.num2+1)
-        if abs(desired_theta) > 0.1:
+        if abs(desired_theta) > 0.09:
             v = 0.0
         else:
             v = kp_distance * distance
-            if v > 0.59:
+            if v > 0.55:
                 v = 1.11
         
         vel.linear.x = v
