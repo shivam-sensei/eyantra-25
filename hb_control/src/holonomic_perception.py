@@ -23,6 +23,7 @@ class PoseDetector(Node):
         
         # Initialize CvBridge for image conversion
         self.bridge = CvBridge()
+        self.processing = False
         
         # ---------- PARAMETERS ----------
         self.crates_marker_length = 0.05  # Set marker size in meters
@@ -30,25 +31,29 @@ class PoseDetector(Node):
         self.aruco_dict_name = 'DICT_4X4_50'  # Choose ArUco dictionary
         
         # ---------- TOPICS ----------
-        self.image_sub = self.create_subscription(Image, "Write the Image Topic Name Here", self.image_callback, 10)
-        self.crate_poses_pub = self.create_publisher(Poses2D, 'Write Box Topic Name Here', 10)
-        self.bot_poses_pub = self.create_publisher(Poses2D, 'Write Bot Topic Name Here', 10)
+        self.image_sub = self.create_subscription(Image, "/camera/image_raw", self.image_callback, 1)
+        self.crate_poses_pub = self.create_publisher(Poses2D, '/crate_pose', 10)
+        self.bot_poses_pub = self.create_publisher(Poses2D, '/bot_pose', 10)
         
         # ---------- CAMERA PARAMETERS ----------
-        self.camera_matrix = None  # load camera intrinsics (3x3 matrix)
-        self.dist_coeffs = None    # load distortion coefficients (1x5 array)
+        self.camera_matrix = np.array([
+            [1030.4890823364258,0.0,960.0],
+            [0.0,1030.489103794098,540.0],
+            [0.0,0.0,1.0]
+        ])  # load camera intrinsics (3x3 matrix)
+        self.dist_coeffs = np.array([0.0,0.0,0.0,0.0,0.0])    # load distortion coefficients (1x5 array)
         
         # ---------- IMAGE MATRICES ----------
         self.pixel_matrix = []  # derive pixel points matrix [[x1,y1], [x2,y2], ...]
         self.world_matrix = []  # derive world points matrix [[x1,y1], [x2,y2], ...]
         self.H_matrix = None    # compute homography matrix using cv2.findHomography
+        self.detected_crates = {}
         
         # ---------- ARUCO SETUP ----------
         # Initialize ArUco detector
-        # self.aruco_dict = cv2.aruco.getPredefinedDictionary(?)
-        # self.aruco_params = cv2.aruco.DetectorParameters()
-        # self.detector = cv2.aruco.ArucoDetector(?, ?)
-        
+        self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+        self.aruco_params = cv2.aruco.DetectorParameters()
+        self.detector = cv2.aruco.ArucoDetector(self.aruco_dict, self.aruco_params)
         self.get_logger().info('PoseDetector initialized')
 
     def pixel_to_world(self, pixel_x, pixel_y):
@@ -56,92 +61,151 @@ class PoseDetector(Node):
         - Calculate the H_matrix using: use cv2.findHomography
         - Convert the pixel coordinates into real world coordinates using: cv2.perspectiveTransform(src_pts, self.H_matrix)
         """
+        matlike_pixel =np.array([[[pixel_x, pixel_y]]], dtype=np.float32)
+        world_points = cv2.perspectiveTransform(matlike_pixel,self.H_matrix)
         # Implement pixel to world coordinate conversion
         # Step 1: Ensure H_matrix is computed
         # Step 2: Create pixel point in correct format for cv2.perspectiveTransform
         # Step 3: Apply transformation and return world coordinates
-        return None, None
+        return world_points[0][0][0], world_points[0][0][1]
+    
+    def my_estimatePoseSingleMarkers(self,corners, marker_size, mtx, distortion):
+        '''
+        This will estimate the rvec and tvec for each of the marker corners detected by:
+        corners, ids, rejectedImgPoints = detector.detectMarkers(image)
+        corners - is an array of detected corners for each detected marker in the image
+        marker_size - is the size of the detected markers
+        mtx - is the camera matrix
+        distortion - is the camera distortion matrix
+        RETURN list of rvecs, tvecs, and trash (so that it corresponds to the old estimatePoseSingleMarkers())
+        '''
+        marker_points = np.array([[-marker_size / 2, marker_size / 2, 0],
+                                [marker_size / 2, marker_size / 2, 0],
+                                [marker_size / 2, -marker_size / 2, 0],
+                                [-marker_size / 2, -marker_size / 2, 0]], dtype=np.float32)
+        trash = []
+        rvecs = []
+        tvecs = []
+        for c in corners:
+            nada, R, t = cv2.solvePnP(marker_points, c, mtx, distortion, False, cv2.SOLVEPNP_IPPE_SQUARE)
+            rvecs.append(R)
+            tvecs.append(t)
+            trash.append(nada)
+        return rvecs, tvecs, trash
 
     def image_callback(self, msg):
-        """
-        Callback function for the image subscriber.
-        Main Steps:
-        1) Convert ROS Image -> cv image using CvBridge
-        2) Undistort the image using camera intrinsics
-        3) Detect all the markers in the world (cv2.aruco.drawDetectedMarkers)
-        4) Derive the Pixel Matrix and the World Matrix using Corner Markers
-        5) Compute the Homography Matrix (cv2.findHomography)
-        5) Convert center pixel of crates marker and bot markers to world coordinates
-        6) Using OpenCV calculate the yaw angle of each marker (cv2.aruco.estimatePoseSingleMarkers)
-        7) Convert the yaw angle as per the new coordinate system
-        8) Publish the bot pose and crate poses using the given custom message type
-        """
+        if self.processing:
+            return
+        
+        self.processing = True
         try:
-            # Step 1: Convert ROS Image -> cv image using CvBridge
-            # Use self.bridge.imgmsg_to_cv2() to convert ROS image to OpenCV format
+            img = self.bridge.imgmsg_to_cv2(msg , desired_encoding='rgb8')
+            undistorted_img = cv2.undistort(img,self.camera_matrix, self.dist_coeffs,None,None)
+            gray = cv2.cvtColor(undistorted_img,cv2.COLOR_RGB2GRAY)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            enhanced = clahe.apply(gray)
+        
+            gray_processed = cv2.GaussianBlur(enhanced, (3, 3), 0)
+
+            corners, ids, rejected = self.detector.detectMarkers(gray_processed)
+            if ids is None:
+                self.processing = False
+                return
             
-            # Step 2: Undistort the image using camera intrinsics
-            # Use cv2.undistort() with camera_matrix and dist_coeffs
-            # Convert to grayscale for marker detection
-            
-            # Step 3: Detect all the markers in the world
-            # Use self.detector.detectMarkers() to find ArUco markers
-            # Use cv2.aruco.drawDetectedMarkers() to visualize detected markers
-            
-            # Step 4: Derive the Pixel Matrix and the World Matrix using Corner Markers
-            # Identify corner markers (IDs 1, 3, 5, 7)
-            # Extract their pixel coordinates and map to known world coordinates
-            
-            # Step 5: Compute the Homography Matrix
-            # Use cv2.findHomography() with pixel and world points
-            
-            # Step 6: Convert center pixel of markers to world coordinates
-            # For each detected marker (excluding corner markers):
-            #       - Calculate center pixel coordinate
-            #       - Use pixel_to_world() to convert to world coordinates
-            
-            # Step 7: Calculate yaw angle of each marker
-            # Use cv2.aruco.estimatePoseSingleMarkers() or any other method to get rotation vectors
-            # If you are going ahead with it, convert rotation vector to rotation matrix using cv2.Rodrigues()
-            # Extract yaw angle from rotation matrix
-            
-            # Step 8: Separate and publish poses
-            # Create separate dictionaries for bot_poses and crate_poses
-            # Call publish_crate_poses() and publish_bot_poses()
-            
-            # Display the image with detected markers
-            # cv2.imshow('Detected Markers', undistorted_image)
-            # cv2.waitKey(1)
-            
+            markers = {ids[i][0]:corners[i][0] for i in range(len(ids))}
+            self.pixel_matrix = np.array([
+            markers[1][0],  
+            markers[3][1],
+            markers[5][3],
+            markers[7][2],
+            ], dtype=np.float32)
+            print(self.pixel_matrix)
+
+            self.world_matrix = np.array([
+                [0, 0],
+                [2438.4, 0],
+                [0, 2438.4],
+                [2438.4, 2438.4]
+            ], dtype=np.float32)
+
+            self.H_matrix,_ = cv2.findHomography(self.pixel_matrix,self.world_matrix)
+            r,t,_ = self.my_estimatePoseSingleMarkers(corners,self.bots_marker_length,self.camera_matrix,self.dist_coeffs)
+            for idx, marker_id in enumerate(ids.flatten()):
+                if marker_id not in [1,3,5,7]:
+                    pts = markers[marker_id]
+                    centre_x = pts[:,0].mean()
+                    centre_y = pts[:,1].mean()
+                    x,y =self.pixel_to_world(centre_x,centre_y)
+                    if(x>1219):
+                        if(y>1219):
+                            x = x - (abs(1219-x))*0.0004*50
+                            y = y - (abs(1219-y))*0.0004*50
+                        elif(y<1219):
+                            x = x - (abs(1219-x))*0.0004*50
+                            y = y + (abs(1219-y))*0.0004*50
+                    elif(x<1219):
+                        if(y>1219):
+                            x = x + (abs(1219-x))*0.0004*50
+                            y = y - (abs(1219-y))*0.0004*50
+                        elif(y<1219):
+                            x = x + (abs(1219-x))*0.0004*50
+                            y = y + (abs(1219-y))*0.0004*50
+                    rvec = r[idx]
+                    R_mat, _ = cv2.Rodrigues(rvec) 
+                    yaws = math.atan2(R_mat[1,0], R_mat[0,0]) 
+                    deg_yaw = (math.degrees(yaws) + 360) % 360
+        
+                    self.detected_crates[marker_id] = (x,y,deg_yaw)
+
+            cv2.namedWindow('Detected Markers', cv2.WINDOW_NORMAL)
+            cv2.resizeWindow('Detected Markers', 1200, 900)  # width, height in pixels
+            cv2.imshow('Detected Markers', undistorted_img)
+            cv2.waitKey(1)
+
+
+            self.publish_crate_poses()
+            self.publish_bot_poses()            
             pass
             
         except Exception as e:
             self.get_logger().error(f'Error processing image: {str(e)}')
+        finally:
+            self.processing = False
 
-    def publish_crate_poses(self, poses):
+
+    def publish_crate_poses(self):
         """
         - Convert python pose dictionary -> message (Poses2D)
         - self.crate_poses_pub.publish(msg)
         """
-        # Create Poses2D message
-        # For each pose in poses list:
-        #       - Create Pose2D message
-        #       - Set id, x, y, w fields
-        #       - Append to poses message
-        # Publish the message
+        poses_msg = Poses2D()
+        # Publish all detected crates
+        for detected_id, (x, y, yaw) in self.detected_crates.items():
+            if detected_id != 9:
+                crate_pose = Pose2D()
+                crate_pose.id = int(detected_id)
+                crate_pose.x = float(x)
+                crate_pose.y = float(y)
+                crate_pose.w = float(yaw)
+                poses_msg.poses.append(crate_pose)
+            
+        self.crate_poses_pub.publish(poses_msg)
         pass
 
-    def publish_bot_poses(self, poses):
+    def publish_bot_poses(self):
         """
         - Convert python pose dictionary -> message (Poses2D)
         - self.bot_poses_pub.publish(msg)
         """
-        # Create Poses2D message
-        # For each pose in poses list:
-        #       - Create Pose2D message
-        #       - Set id, x, y, w fields
-        #       - Append to poses message
-        # Publish the message
+        if 9 in self.detected_crates:
+            bot_pose_msg = Poses2D()
+            bot_pose = Pose2D()
+            bot_pose.id = 9
+            bot_pose.x = float(self.detected_crates[9][0])
+            bot_pose.y = float(self.detected_crates[9][1])
+            bot_pose.w = float(self.detected_crates[9][2])
+            bot_pose_msg.poses.append(bot_pose)
+            self.bot_poses_pub.publish(bot_pose_msg)
         pass
 
 def main(args=None):
