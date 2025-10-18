@@ -58,8 +58,8 @@ class HolonomicPIDController(Node):
         self.max_vel = 1.0
         # ---------------- PID Parameters ----------------
         self.pid_params = {
-            'x': {'kp': 0.3, 'ki': 0.00, 'kd': 0.1, 'max_out': self.max_vel},
-            'y': {'kp': 0.3, 'ki': 0.00, 'kd': 0.1, 'max_out': self.max_vel},
+            'x': {'kp': 0.3, 'ki': 0.00, 'kd': 0.05, 'max_out': self.max_vel},
+            'y': {'kp': 0.3, 'ki': 0.00, 'kd': 0.05, 'max_out': self.max_vel},
             'theta': {'kp': 0.4, 'ki': 0.00, 'kd': 0.2, 'max_out': self.max_vel * 2}
         }
 
@@ -154,18 +154,23 @@ class HolonomicPIDController(Node):
             error_theta = math.atan2(math.sin(error_theta), math.cos(error_theta))
             print(error_theta,",",angle_to_goal,",",bot_theta)
             self.calculate_publish(0,0,error_theta,dt)
-            if (abs(error_theta + math.pi)< self.goal_limit['theta']):
+            if (abs(error_theta)< self.goal_limit['theta']):
                 self.pid_x.reset()
                 self.pid_y.reset()
                 self.pid_theta.reset()
+                self.publish_wheel_velocities([0.0,0.0,0.0])
                 self.STATE = "APPROACH"
+                return
 
         if self.STATE == "APPROACH":
-            error_x = goal_x - bot_x 
-            error_y = goal_y - bot_y
-            # goal_x_offset = goal_x - 130 * math.cos(goal_theta)
-            # goal_y_offset = goal_y - 130 * math.sin(goal_theta)
-            self.calculate_publish(error_x,error_y,0,dt)
+            
+            goal_x_offset = goal_x - 130 * math.cos(angle_to_goal)
+            goal_y_offset = goal_y - 130 * math.sin(angle_to_goal)
+            error_x = goal_x_offset - bot_x 
+            error_y = goal_y_offset - bot_y
+            e_x_robot =  math.cos(bot_theta)*error_x + math.sin(bot_theta)*error_y
+            e_y_robot = -math.sin(bot_theta)*error_x + math.cos(bot_theta)*error_y
+            self.calculate_publish(e_x_robot,e_y_robot,0,dt)
             if (abs(error_x) < self.goal_limit['x'] and 
                 abs(error_y) < self.goal_limit['y']):
                 self.pid_x.reset()
@@ -192,10 +197,14 @@ class HolonomicPIDController(Node):
 
         
     def calculate_publish(self,ex,ey,eomega,dt):
-
+        if abs(ex) < self.goal_limit['x']: ex = 0.0
+        if abs(ey) < self.goal_limit['y']: ey = 0.0
+        if abs(eomega) < self.goal_limit['theta']: eomega = 0.0
         vx = self.pid_x.compute(ex,dt)
         vy = self.pid_y.compute(ey,dt)
         omega = self.pid_theta.compute(eomega,dt)
+        if omega > 1.0 : 
+            omega = 1.0
         error_matrix = np.array([vx,vy,omega])
         wheel_speed = np.linalg.solve(self.array,error_matrix)
         s1 = wheel_speed[0]
