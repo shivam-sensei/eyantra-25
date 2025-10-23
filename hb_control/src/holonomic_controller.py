@@ -21,8 +21,8 @@ class PID:
         kd_error = (error - self.prev_error)/dt
         value = error*self.kp + kd_error*self.kd
         self.prev_error = error
-        if value < 20.0 and value > 5:
-            value *= abs(25-value)*0.4
+        if abs(value) < 50 and abs(value) > 5 and self.kp < 0.4:
+            value = math.copysign(60,value)
         return value
     
     
@@ -65,9 +65,9 @@ class HolonomicPIDController(Node):
         self.max_vel = 1.0
         # ---------------- PID Parameters ----------------
         self.pid_params = {
-            'x': {'kp': 0.3, 'ki': 0.00, 'kd': 0.05, 'max_out': self.max_vel},
-            'y': {'kp': 0.3, 'ki': 0.00, 'kd': 0.05, 'max_out': self.max_vel},
-            'theta': {'kp': 1.1, 'ki': 0.00, 'kd': 0.6, 'max_out': self.max_vel * 2}
+            'x': {'kp': 0.3, 'ki': 0.00, 'kd': 0.07, 'max_out': self.max_vel},
+            'y': {'kp': 0.3, 'ki': 0.00, 'kd': 0.07, 'max_out': self.max_vel},
+            'theta': {'kp': 1.3, 'ki': 0.00, 'kd': 0.5, 'max_out': self.max_vel * 2}
         }
 
         # Initialize PIDs
@@ -165,16 +165,14 @@ class HolonomicPIDController(Node):
 
         #Current pose
         bot_x, bot_y, bot_theta = self.current_pose
-        bot_theta = self.convert_to_pi(bot_theta)
         goal_x, goal_y, goal_theta = self.goalpose
         dx = goal_x - bot_x
         dy = goal_y - bot_y 
         angle_to_goal = math.atan2(dy, dx) - math.pi/2
         if self.STATE == "ALIGN":
-            goal_theta = self.convert_to_pi(goal_theta)
             error_theta = -(angle_to_goal - bot_theta)
             error_theta = math.atan2(math.sin(error_theta), math.cos(error_theta))
-            print(error_theta,",",angle_to_goal,",",bot_theta)
+            print(angle_to_goal,error_theta,",",bot_theta)
             self.calculate_publish(0,0,error_theta,dt)
             if (abs(error_theta)< self.goal_limit['theta']):
                 self.pid_x.reset()
@@ -183,19 +181,17 @@ class HolonomicPIDController(Node):
                 self.publish_wheel_velocities([0.0,0.0,0.0])
                 self.STATE = "APPROACH"
                 return
-        angle_to_goal += math.pi/2
-        if self.STATE == "APPROACH":
             
-            goal_x_offset = goal_x - 35 * math.cos(angle_to_goal)
-            goal_y_offset = goal_y - 35 * math.sin(angle_to_goal)
-            error_x = goal_x_offset - bot_x 
-            error_y = goal_y_offset - bot_y
+            
+        if self.STATE == "APPROACH":
+            error_x = goal_x - bot_x 
+            error_y = goal_y - bot_y
+            distance = math.sqrt(error_x*error_x + error_y*error_y)
             e_x_robot =  math.cos(bot_theta)*error_x + math.sin(bot_theta)*error_y
             e_y_robot = -math.sin(bot_theta)*error_x + math.cos(bot_theta)*error_y
-            print(e_x_robot,e_y_robot, error_x,error_y) 
+            print(error_x,error_y, distance) 
             self.calculate_publish(e_x_robot,e_y_robot,0,dt)
-            if (abs(e_x_robot) < 15.0 and 
-                abs(e_y_robot) < 130.0):
+            if (distance < 145):
                 self.pid_x.reset()
                 self.pid_y.reset()
                 self.pid_theta.reset()
@@ -213,13 +209,16 @@ class HolonomicPIDController(Node):
             goal_x, goal_y, goal_theta = self.d1
             error_x = goal_x - bot_x 
             error_y = goal_y - bot_y
+            angle_to_goal = math.atan2(error_x, error_y) - math.pi/2
+            error_theta = -(angle_to_goal - bot_theta)
+            error_theta = math.atan2(math.sin(error_theta), math.cos(error_theta))
+            distance = math.sqrt(error_x*error_x + error_y*error_y)
             e_x_robot =  math.cos(bot_theta)*error_x + math.sin(bot_theta)*error_y
             e_y_robot = -math.sin(bot_theta)*error_x + math.cos(bot_theta)*error_y
             # error_theta = goal_theta-bot_theta
-            self.calculate_publish(e_x_robot,e_y_robot,0,dt)
-            print(e_x_robot,e_y_robot) 
-            if (abs(error_x) < 5.0 and 
-                abs(error_y) < 5.0):
+            self.calculate_publish(e_x_robot,e_y_robot,error_theta,dt)
+            print(error_x,error_y, distance)
+            if (distance < 25):
                 self.pid_x.reset()
                 self.pid_y.reset()
                 self.pid_theta.reset()
@@ -237,13 +236,13 @@ class HolonomicPIDController(Node):
             goal_x,goal_y,goal_theta = self.dock_crystal
             error_x = goal_x - bot_x 
             error_y = goal_y - bot_y
+            distance = math.sqrt(error_x*error_x + error_y*error_y)
             e_x_robot =  math.cos(bot_theta)*error_x + math.sin(bot_theta)*error_y
             e_y_robot = -math.sin(bot_theta)*error_x + math.cos(bot_theta)*error_y
             # error_theta = goal_theta-bot_theta
             self.calculate_publish(e_x_robot,e_y_robot,0,dt)
-            print(error_x,error_y) 
-            if (abs(error_x) < 5.0 and 
-                abs(error_y) < 5.0):
+            print(error_x,error_y, distance)
+            if (distance < 25):
                 self.pid_x.reset()
                 self.pid_y.reset()
                 self.pid_theta.reset()

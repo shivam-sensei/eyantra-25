@@ -186,9 +186,8 @@ class PoseDetector(Node):
                 rvec = r[idx]
                 R_mat, _ = cv2.Rodrigues(rvec)
                 yaw_rad = math.atan2(R_mat[1, 0], R_mat[0, 0])
-                yaw_deg = (math.degrees(yaw_rad) + 360) % 360
-
-                self.detected_crates[marker_id] = (x_corr, y_corr, yaw_deg)
+                
+                self.detected_crates[marker_id] = (x_corr, y_corr, yaw_rad)
 
             # cv2.namedWindow('Detected Markers', cv2.WINDOW_NORMAL)
             # cv2.resizeWindow('Detected Markers', 1200, 900)
