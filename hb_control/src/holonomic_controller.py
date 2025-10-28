@@ -34,12 +34,16 @@ class PID:
 class HolonomicPIDController(Node):
     def __init__(self):
         super().__init__('holonomic_pid_controller')  # initializing ros node
-        self.STATE = "ALIGN"
-        # ---------------- Robot Parameters ----------------
-        self.robot_id = None
-        self.current_pose = None
-        self.goal_index = 0
-        self.last_time = self.get_clock().now()
+        # self.STATE = "ALIGN"
+        # # ---------------- Robot Parameters ----------------
+        # self.robot_id_crystal = 0
+        # self.current_pose_crystal = None
+        # self.robot_id_glacio = 4
+        # self.current_pose_glacio = None
+        # self.robot_id_frostbite = 2
+        # self.current_pose_frostbite = None
+        # self.last_time = self.get_clock().now()
+        
         self.goal_limit = {
             'x': 5.0,
             'y':5.0,
@@ -47,8 +51,10 @@ class HolonomicPIDController(Node):
         }
 
         # ---------------- Goal Definitions ----------------
-        self.goalpose = None
+        # self.goalpose = None
         self.d1 = [1219,1219,0]
+        self.d2 = [820,2017.5,0]
+        self.d3= [1616,2017.5,0]
         self.dock_crystal = [1218.0,205.0,0.0]
         self.crate_id = None
         self.link_attached = False
@@ -69,11 +75,47 @@ class HolonomicPIDController(Node):
             'y': {'kp': 0.3, 'ki': 0.00, 'kd': 0.07, 'max_out': self.max_vel},
             'theta': {'kp': 1.3, 'ki': 0.00, 'kd': 0.5, 'max_out': self.max_vel * 2}
         }
+        self.bots = {
+            0: {
+                "state": "ALIGN",
+                "name": "crystal",
+                "pose": None,
+                "goal": None,
+                "crate_id": None,
+                "link_attached": False,
+                "link_detach": False,
+                "dock":[1218.0,205.0,0.0],
+                "pid_x": PID(**self.pid_params['x']),
+                "pid_y": PID(**self.pid_params['y']),
+                "pid_theta": PID(**self.pid_params['theta']),
+                "last_time": self.get_clock().now()
+            },
+            2: { "state": "ALIGN",
+                "name": "frostbite",
+                "pose": None,
+                "goal": None,
+                "crate_id": None,
+                "link_attached": False,
+                "link_detach": False,
+                "dock":[1568.0,202.0,0],
+                "pid_x": PID(**self.pid_params['x']),
+                "pid_y": PID(**self.pid_params['y']),
+                "pid_theta": PID(**self.pid_params['theta']),
+                "last_time": self.get_clock().now() },
+            4: { "state": "ALIGN",
+                "name": "glacio",
+                "pose": None,
+                "goal": None,
+                "crate_id": None,
+                "link_attached": False,
+                "link_detach": False,
+                "dock":[864.0,204.0,0],
+                "pid_x": PID(**self.pid_params['x']),
+                "pid_y": PID(**self.pid_params['y']),
+                "pid_theta": PID(**self.pid_params['theta']),
+                "last_time": self.get_clock().now()}
+        }
 
-        # Initialize PIDs
-        self.pid_x = PID(**self.pid_params['x'])
-        self.pid_y = PID(**self.pid_params['y'])
-        self.pid_theta = PID(**self.pid_params['theta'])
 
         # ---------------- ROS 2 Publishers & Subscribers ----------------
         
@@ -107,15 +149,21 @@ class HolonomicPIDController(Node):
 
     # ---------------- Subscriber Callback ----------------
     def bot_pose_cb(self, msg):
+        for pose in msg.poses:
+            if pose.id in self.bots:
+                self.bots[pose]["pose"] = [pose.x,pose.y,pose.w]
+
         pose = msg.poses[0]
         self.current_pose = [pose.x,pose.y,pose.w]
         self.robot_id = pose.id
         # print(self.current_pose)
 
     def crate_pose_cb(self,msg):
-        pose = msg.poses[0]
-        self.goalpose = [pose.x,pose.y,pose.w]
-        self.crate_id = pose.id
+        for pose in msg.poses:
+            crate_id = pose.id
+            for bot_id, bot_data in self.bots.items():
+                if bot_data["crate_id"] == crate_id:
+                    bot_data["goal"] = [pose.x, pose.y, pose.w]
     
     def attach(self,botname,crate):
         self.Attach_req.data = json.dumps({
@@ -161,7 +209,7 @@ class HolonomicPIDController(Node):
         dt = (now - self.last_time).nanoseconds / 1e9
         if dt <= 0:
             return
-        self.last_time = now
+        self.last_time = now 
 
         #Current pose
         bot_x, bot_y, bot_theta = self.current_pose
@@ -215,7 +263,6 @@ class HolonomicPIDController(Node):
             distance = math.sqrt(error_x*error_x + error_y*error_y)
             e_x_robot =  math.cos(bot_theta)*error_x + math.sin(bot_theta)*error_y
             e_y_robot = -math.sin(bot_theta)*error_x + math.cos(bot_theta)*error_y
-            # error_theta = goal_theta-bot_theta
             self.calculate_publish(e_x_robot,e_y_robot,error_theta,dt)
             print(error_x,error_y, distance)
             if (distance < 25):
@@ -239,7 +286,6 @@ class HolonomicPIDController(Node):
             distance = math.sqrt(error_x*error_x + error_y*error_y)
             e_x_robot =  math.cos(bot_theta)*error_x + math.sin(bot_theta)*error_y
             e_y_robot = -math.sin(bot_theta)*error_x + math.cos(bot_theta)*error_y
-            # error_theta = goal_theta-bot_theta
             self.calculate_publish(e_x_robot,e_y_robot,0,dt)
             print(error_x,error_y, distance)
             if (distance < 25):
@@ -270,15 +316,12 @@ class HolonomicPIDController(Node):
         s3 = wheel_speed[2]
         velocities = [s1,s2,s3]
 
-        # Convert to wheel velocities (custom equations)
         self.publish_wheel_velocities(velocities,90.0)
 
 
 
     # ---------------- Publisher ----------------
     def publish_wheel_velocities(self,wheel_vel=[0.0,0.0,0.0],arm_state = 0.0, elbow = 90.0):
-        # Wheel velocity array (Float64MultiArray)
-        # Order: [Left wheel speed, Right wheel speed, Rear wheel speed]
         bot_msg_array = BotCmdArray()
         bot_msg = BotCmd()
         bot_msg.id = self.robot_id
