@@ -81,7 +81,7 @@ class HolonomicPIDController(Node):
                 "name": "crystal",
                 "pose": None,
                 "goal": None,
-                "crate_id": None,
+                "crate_id": 24,
                 "link_attached": False,
                 "link_detach": False,
                 "dock":[1218.0,205.0,0.0],
@@ -94,7 +94,7 @@ class HolonomicPIDController(Node):
                 "name": "frostbite",
                 "pose": None,
                 "goal": None,
-                "crate_id": None,
+                "crate_id": 45,
                 "link_attached": False,
                 "link_detach": False,
                 "dock":[1568.0,202.0,0],
@@ -106,7 +106,7 @@ class HolonomicPIDController(Node):
                 "name": "glacio",
                 "pose": None,
                 "goal": None,
-                "crate_id": None,
+                "crate_id": 2,
                 "link_attached": False,
                 "link_detach": False,
                 "dock":[864.0,204.0,0],
@@ -151,11 +151,11 @@ class HolonomicPIDController(Node):
     def bot_pose_cb(self, msg):
         for pose in msg.poses:
             if pose.id in self.bots:
-                self.bots[pose]["pose"] = [pose.x,pose.y,pose.w]
+                self.bots[pose.id]["pose"] = [pose.x,pose.y,pose.w]
 
-        pose = msg.poses[0]
-        self.current_pose = [pose.x,pose.y,pose.w]
-        self.robot_id = pose.id
+        # pose = msg.poses[0]
+        # self.current_pose = [pose.x,pose.y,pose.w]
+        # self.robot_id = pose.id
         # print(self.current_pose)
 
     def crate_pose_cb(self,msg):
@@ -202,66 +202,74 @@ class HolonomicPIDController(Node):
     # ---------------- Control Loop ----------------
     def control_cb(self):
         for bot_id,bot_data in self.bots.items():
+            name = bot_data["name"]
             state = bot_data["state"]
             botPose = bot_data["pose"]
             goalPose = bot_data["goal"]
             crate = bot_data["crate_id"]
             last_time = bot_data["last_time"]
+            lnk_attached = bot_data["link_attached"]
+            lnk_detach = bot_data["link_detach"]
+            dock = bot_data["dock"]
+            self.pid_x = bot_data["pid_x"]
+            self.pid_y = bot_data["pid_y"]
+            self.pid_theta = bot_data["pid_theta"]
 
-            if(self.current_pose is None):
+            if(botPose is None):
                 return
             
             # Time delta
             now = self.get_clock().now()
-            dt = (now - self.last_time).nanoseconds / 1e9
+            dt = (now - last_time).nanoseconds / 1e9
             if dt <= 0:
                 return
-            self.last_time = now 
+            last_time = now 
             
             #Current pose
-            bot_x, bot_y, bot_theta = self.current_pose
-            goal_x, goal_y, goal_theta = self.goalpose
+            bot_x, bot_y, bot_theta = botPose
+            goal_x, goal_y, goal_theta = goalPose
             dx = goal_x - bot_x
             dy = goal_y - bot_y 
             angle_to_goal = math.atan2(dy, dx) - math.pi/2
-            if self.STATE == "ALIGN":
+            if state == "ALIGN":
                 error_theta = -(angle_to_goal - bot_theta)
                 error_theta = math.atan2(math.sin(error_theta), math.cos(error_theta))
                 print(angle_to_goal,error_theta,",",bot_theta)
-                self.calculate_publish(0,0,error_theta,dt)
+                self.calculate_publish(0,0,error_theta,dt,bot_id)
                 if (abs(error_theta)< self.goal_limit['theta']):
                     self.pid_x.reset()
                     self.pid_y.reset()
                     self.pid_theta.reset()
-                    self.publish_wheel_velocities([0.0,0.0,0.0])
-                    self.STATE = "APPROACH"
+                    self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0])
+                    bot_data["state"] = "APPROACH"
                     return
                 
                 
-            if self.STATE == "APPROACH":
+            if state == "APPROACH":
                 error_x = goal_x - bot_x 
                 error_y = goal_y - bot_y
                 distance = math.sqrt(error_x*error_x + error_y*error_y)
                 e_x_robot =  math.cos(bot_theta)*error_x + math.sin(bot_theta)*error_y
                 e_y_robot = -math.sin(bot_theta)*error_x + math.cos(bot_theta)*error_y
                 print(error_x,error_y, distance) 
-                self.calculate_publish(e_x_robot,e_y_robot,0,dt)
+                self.calculate_publish(e_x_robot,e_y_robot,0,dt,bot_id)
                 if (distance < 145):
                     self.pid_x.reset()
                     self.pid_y.reset()
                     self.pid_theta.reset()
-                    self.publish_wheel_velocities([0.0,0.0,0.0],90.0)
-                    self.STATE = "LINK"
+                    self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],90.0)
+                    bot_data["state"] = "LINK"
                     return
                 
-            if self.STATE == "LINK":
-                if not self.link_attached:
-                    print(self.attach("crystal",self.crate_id))
-                self.publish_wheel_velocities([0.0,0.0,0.0],45.0)
-                self.STATE = "DROPZONE"
+            if state == "LINK":
+                if not lnk_attached:
+                    print(self.attach(f"{name}",crate))
+                self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],45.0)
+                bot_data["state"] = "DROPZONE"
             
-            if self.STATE == "DROPZONE":
-                goal_x, goal_y, goal_theta = self.d1
+            if state== "DROPZONE":
+                dropzones = {"red": self.d1, "green": self.d2, "blue": self.d3}
+                goal_x, goal_y, goal_theta = dropzones[self.crate_colour(crate)]
                 error_x = goal_x - bot_x 
                 error_y = goal_y - bot_y
                 angle_to_goal = math.atan2(error_x, error_y) - math.pi/2
@@ -270,46 +278,46 @@ class HolonomicPIDController(Node):
                 distance = math.sqrt(error_x*error_x + error_y*error_y)
                 e_x_robot =  math.cos(bot_theta)*error_x + math.sin(bot_theta)*error_y
                 e_y_robot = -math.sin(bot_theta)*error_x + math.cos(bot_theta)*error_y
-                self.calculate_publish(e_x_robot,e_y_robot,error_theta,dt)
+                self.calculate_publish(e_x_robot,e_y_robot,error_theta,dt,bot_id)
                 print(error_x,error_y, distance)
                 if (distance < 25):
                     self.pid_x.reset()
                     self.pid_y.reset()
                     self.pid_theta.reset()
-                    self.publish_wheel_velocities([0.0,0.0,0.0],45.0)
-                    self.STATE = "DETACH"
+                    self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],45.0)
+                    bot_data["state"] = "DETACH"
                     return
                 
-            if self.STATE == "DETACH":
-                if not self.link_detach:
-                    print(self.detach("crystal",self.crate_id))
-                self.publish_wheel_velocities([0.0,0.0,0.0],45.0)
-                self.STATE = "DOCK"
+            if state == "DETACH":
+                if not lnk_detach:
+                    print(self.detach(f"{name}",crate))
+                self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],45.0)
+                bot_data["state"] = "DOCK"
 
-            if self.STATE == "DOCK":
-                goal_x,goal_y,goal_theta = self.dock_crystal
+            if state == "DOCK":
+                goal_x,goal_y,goal_theta = dock
                 error_x = goal_x - bot_x 
                 error_y = goal_y - bot_y
                 distance = math.sqrt(error_x*error_x + error_y*error_y)
                 e_x_robot =  math.cos(bot_theta)*error_x + math.sin(bot_theta)*error_y
                 e_y_robot = -math.sin(bot_theta)*error_x + math.cos(bot_theta)*error_y
-                self.calculate_publish(e_x_robot,e_y_robot,0,dt)
+                self.calculate_publish(e_x_robot,e_y_robot,0,dt,bot_id)
                 print(error_x,error_y, distance)
                 if (distance < 25):
                     self.pid_x.reset()
                     self.pid_y.reset()
                     self.pid_theta.reset()
-                    self.publish_wheel_velocities([0.0,0.0,0.0],0.0,0.0)
-                    self.STATE = "DONE"
+                    self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],0.0,0.0)
+                    bot_data["state"] = "DONE"
                     return
             
-            if self.STATE == "DONE":
+            if state == "DONE":
                 return
 
 
 
         
-    def calculate_publish(self,ex,ey,eomega,dt):
+    def calculate_publish(self,ex,ey,eomega,dt,id):
         if abs(ex) < self.goal_limit['x']: ex = 0.0
         if abs(ey) < self.goal_limit['y']: ey = 0.0
         if abs(eomega) < self.goal_limit['theta']: eomega = 0.0
@@ -323,15 +331,15 @@ class HolonomicPIDController(Node):
         s3 = wheel_speed[2]
         velocities = [s1,s2,s3]
 
-        self.publish_wheel_velocities(velocities,90.0)
+        self.publish_wheel_velocities(id,velocities,90.0)
 
 
 
     # ---------------- Publisher ----------------
-    def publish_wheel_velocities(self,wheel_vel=[0.0,0.0,0.0],arm_state = 0.0, elbow = 90.0):
+    def publish_wheel_velocities(self,id,wheel_vel=[0.0,0.0,0.0],arm_state = 0.0, elbow = 90.0):
         bot_msg_array = BotCmdArray()
         bot_msg = BotCmd()
-        bot_msg.id = self.robot_id
+        bot_msg.id = id
         bot_msg.m1 = float(wheel_vel[0])
         bot_msg.m2 = float(wheel_vel[1])
         bot_msg.m3 = float(wheel_vel[2])
