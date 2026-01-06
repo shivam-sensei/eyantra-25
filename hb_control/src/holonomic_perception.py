@@ -168,9 +168,9 @@ class PoseDetector(Node):
 
                 self.detected_crates[marker_id] = (x_corr, y_corr, yaw_rad)
                 text = f"ID:{marker_id} | Yaw:{yaw_deg:.1f}° | X:{x_corr:.1f} | Y:{y_corr:.1f}"
-                cv2.circle(gray_processed, (int(centre_x), int(centre_y)), 5, (0, 255, 0), -1)
+                cv2.circle(undistorted_img, (int(centre_x), int(centre_y)), 5, (0, 255, 0), -1)
                 cv2.putText(
-                    gray_processed, text, 
+                    undistorted_img, text, 
                     (int(centre_x) + 10, int(centre_y) - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 
                     0.5, (0, 255, 0), 1, cv2.LINE_AA
@@ -178,7 +178,7 @@ class PoseDetector(Node):
             
             cv2.namedWindow('Detected Markers', cv2.WINDOW_NORMAL)
             cv2.resizeWindow('Detected Markers', 1200, 900)
-            cv2.imshow('Detected Markers', gray_processed)
+            cv2.imshow('Detected Markers', undistorted_img)
             cv2.waitKey(1)
 
             self.publish_crate_poses()

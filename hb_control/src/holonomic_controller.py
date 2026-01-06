@@ -53,12 +53,12 @@ class HolonomicPIDController(Node):
     def __init__(self):
         super().__init__('holonomic_pid_controller')  # initializing ros node
         # ----------MQTT-----------------
-        self.broker_IP = "mqtt.local"
+        self.broker_IP = "192.168.100.12"
         self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
         self.mqtt_client.on_connect = self.on_connect
         self.mqtt_client.on_message = self.on_message
         self.mqtt_client.on_disconnect = self.on_disconnect
-        self.MAX_WHEEL_CMD = 120.0
+        self.MAX_WHEEL_CMD = 220.0
 
         try:
             self.get_logger().info(f"Connecting to MQTT Broker at {self.broker_IP}...")
@@ -70,7 +70,7 @@ class HolonomicPIDController(Node):
     
             
         self.max_vel = 1.0
-        self.robot_id = 0
+        self.robot_id = 4
         self.goal_reached = 0
         self.last_time = self.get_clock().now()
         self.current_pose = { 
@@ -103,8 +103,8 @@ class HolonomicPIDController(Node):
         ])
 
         self.pid_params = {
-            'x': {'kp': 0.29, 'ki': 0.00, 'kd': 0.06, 'max_out': self.max_vel},
-            'y': {'kp': 0.29, 'ki': 0.00, 'kd': 0.06, 'max_out': self.max_vel},
+            'x': {'kp': 0.19, 'ki': 0.00, 'kd': 0.06, 'max_out': self.max_vel},
+            'y': {'kp': 0.19, 'ki': 0.00, 'kd': 0.06, 'max_out': self.max_vel},
             'theta': {'kp': 1.3, 'ki': 0, 'kd': 0.5, 'max_out': self.max_vel * 2}
         }
 
