@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import math
 import cv2
 import numpy as np
@@ -13,10 +12,9 @@ from hb_interfaces.msg import Pose2D, Poses2D
 class PoseDetector(Node):
     def __init__(self):
         super().__init__('localization_node')
-        
+        self.homography_ready = False
         # Initialize CvBridge for image conversion
         self.bridge = CvBridge()
-        self.processing = False
         self.bot_ids = [0, 2, 4]
         self.ref_ids = [1, 3, 5, 7]
         
@@ -26,7 +24,7 @@ class PoseDetector(Node):
         self.aruco_dict_name = 'DICT_4X4_50'  # Choose ArUco dictionary
         
         # ---------- TOPICS ----------
-        self.image_sub = self.create_subscription(Image, "/camera/image_raw", self.image_callback, 10)
+        self.image_sub = self.create_subscription(Image, "/image_raw", self.image_callback, 10)
         self.crate_poses_pub = self.create_publisher(Poses2D, '/crate_pose', 10)
         self.bot_poses_pub = self.create_publisher(Poses2D, '/bot_pose', 10)
         
@@ -75,57 +73,64 @@ class PoseDetector(Node):
         return rvecs, tvecs, trash
 
     def image_callback(self, msg):
-        if self.processing:
-            return
-
-        self.processing = True
         try:
             img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')
 
             undistorted_img = cv2.undistort(img, self.camera_matrix, self.dist_coeffs, None, None)
             gray = cv2.cvtColor(undistorted_img, cv2.COLOR_RGB2GRAY)
 
-            self.get_logger().info("Step 4: Applying CLAHE")
-            clahe = cv2.createCLAHE(clipLimit=0.7, tileGridSize=(8, 8))
-            enhanced = clahe.apply(gray)
+            # self.get_logger().info("Step 4: Applying CLAHE")
+            # clahe = cv2.createCLAHE(clipLimit=0.7, tileGridSize=(2, 2))
+            # gray_processed = clahe.apply(gray)
 
-            self.get_logger().info("Step 5: Applying Gaussian blur")
-            gray_processed = cv2.GaussianBlur(enhanced, (3, 3), 0)
+            # self.get_logger().info("Step 5: Applying Gaussian blur")
+            gray_processed = cv2.GaussianBlur(gray, (3, 3), 0)
 
             corners, ids, rejected = self.detector.detectMarkers(gray_processed)
 
             if ids is None or len(ids) == 0:
                 self.get_logger().warn("No markers detected")
-                self.processing = False
+                
                 return
 
             markers = {ids[i][0]: corners[i][0] for i in range(len(ids))}
             print(ids)
 
-            required_ids = [1, 3, 5, 7]
-            if not all(i in ids.flatten().tolist() for i in required_ids):
-                self.get_logger().warn("Missing reference markers (1,3,5,7). Skipping frame.")
-                self.processing = False
-                return
+            if not self.homography_ready:
+                required_ids = [1, 3, 5, 7]
 
-            self.pixel_matrix = np.array([
-                markers[1][0],
-                markers[3][1],
-                markers[5][3],
-                markers[7][2],
-            ], dtype=np.float32)
-            self.get_logger().info(f"Pixel matrix: {self.pixel_matrix}")
+                if not all(i in ids.flatten().tolist() for i in required_ids):
+                    self.get_logger().warn("Waiting for all markers (1,3,5,7)...")
+                    
+                    return
 
-            self.world_matrix = np.array([
-                [0, 0],
-                [2438.4, 0],
-                [0, 2438.4],
-                [2438.4, 2438.4]
-            ], dtype=np.float32)
+                self.pixel_matrix = np.array([
+                    markers[1][0],
+                    markers[3][1],
+                    markers[5][3],
+                    markers[7][2],
+                ], dtype=np.float32)
 
-            self.H_matrix, _ = cv2.findHomography(self.pixel_matrix, self.world_matrix)
-            if self.H_matrix is None:
-                raise ValueError("Homography matrix computation failed")
+                self.world_matrix = np.array([
+                    [0, 0],
+                    [2438.4, 0],
+                    [0, 2438.4],
+                    [2438.4, 2438.4]
+                ], dtype=np.float32)
+
+                self.H_matrix, _ = cv2.findHomography(
+                    self.pixel_matrix,
+                    self.world_matrix
+                )
+
+                if self.H_matrix is None:
+                    self.get_logger().error("Homography computation failed")
+                    
+                    return
+
+                self.homography_ready = True
+                self.get_logger().info("Homography locked successfully")
+
 
             r, t, _ = self.my_estimatePoseSingleMarkers(
                 corners, self.bots_marker_length, self.camera_matrix, self.dist_coeffs
@@ -135,7 +140,7 @@ class PoseDetector(Node):
             cy = self.camera_matrix[1, 2]
             Px, Py = self.pixel_to_world(cx, cy)
 
-            Z_CAM = 2400.0 
+            Z_CAM = 2425.0 
 
             cv2.aruco.drawDetectedMarkers(undistorted_img, corners, ids)
 
@@ -162,11 +167,10 @@ class PoseDetector(Node):
                 yaw_deg = math.degrees(yaw_rad)
 
                 self.detected_crates[marker_id] = (x_corr, y_corr, yaw_rad)
-
                 text = f"ID:{marker_id} | Yaw:{yaw_deg:.1f}° | X:{x_corr:.1f} | Y:{y_corr:.1f}"
-                cv2.circle(undistorted_img, (int(centre_x), int(centre_y)), 5, (0, 255, 0), -1)
+                cv2.circle(gray_processed, (int(centre_x), int(centre_y)), 5, (0, 255, 0), -1)
                 cv2.putText(
-                    undistorted_img, text, 
+                    gray_processed, text, 
                     (int(centre_x) + 10, int(centre_y) - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 
                     0.5, (0, 255, 0), 1, cv2.LINE_AA
@@ -174,7 +178,7 @@ class PoseDetector(Node):
             
             cv2.namedWindow('Detected Markers', cv2.WINDOW_NORMAL)
             cv2.resizeWindow('Detected Markers', 1200, 900)
-            cv2.imshow('Detected Markers', undistorted_img)
+            cv2.imshow('Detected Markers', gray_processed)
             cv2.waitKey(1)
 
             self.publish_crate_poses()
@@ -184,8 +188,6 @@ class PoseDetector(Node):
             self.get_logger().error(f"Error processing image: {e}")
             self.get_logger().error(traceback.format_exc())
 
-        finally:
-            self.processing = False
 
 
     def publish_crate_poses(self):

@@ -29,9 +29,18 @@ if(BUILD_TESTING)
 endif()
 
 install(
-  PROGRAMS src/holonomic_perception.py
-  PROGRAMS src/holonomic_controller.py
+  PROGRAMS
+  src/holonomic_perception.py
+  src/holonomic_controller.py
+  src/camera_testing.py
   DESTINATION lib/${PROJECT_NAME}
+)
+
+install(
+  DIRECTORY
+    launch
+  DESTINATION
+    share/${PROJECT_NAME}/
 )
 
 ament_package()
