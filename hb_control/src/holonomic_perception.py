@@ -46,6 +46,16 @@ class PoseDetector(Node):
         # Initialize ArUco detector
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
         self.aruco_params = cv2.aruco.DetectorParameters()
+        self.aruco_params.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+        self.aruco_params.cornerRefinementWinSize = 5
+        self.aruco_params.cornerRefinementMaxIterations = 30
+        self.aruco_params.minMarkerPerimeterRate = 0.025
+        self.aruco_params.maxMarkerPerimeterRate = 4.0
+        self.aruco_params.adaptiveThreshWinSizeMin = 3
+        self.aruco_params.adaptiveThreshWinSizeMax = 34
+        self.aruco_params.adaptiveThreshWinSizeStep = 4 
+        self.aruco_params.polygonalApproxAccuracyRate = 0.025
+        self.aruco_params.minCornerDistanceRate = 0.017
         self.detector = cv2.aruco.ArucoDetector(self.aruco_dict, self.aruco_params)
         self.get_logger().info('PoseDetector initialized')
 
@@ -175,6 +185,12 @@ class PoseDetector(Node):
                     cv2.FONT_HERSHEY_SIMPLEX, 
                     0.5, (0, 255, 0), 1, cv2.LINE_AA
                 )
+                self.draw_marker_axes(
+                    undistorted_img,
+                    centre_x,
+                    centre_y,
+                    yaw_rad
+                )
             
             cv2.namedWindow('Detected Markers', cv2.WINDOW_NORMAL)
             cv2.resizeWindow('Detected Markers', 1200, 900)
@@ -188,6 +204,28 @@ class PoseDetector(Node):
             self.get_logger().error(f"Error processing image: {e}")
             self.get_logger().error(traceback.format_exc())
 
+    def draw_marker_axes(self,img, cx, cy, yaw_rad, length=60):
+        cx, cy = int(cx), int(cy)
+
+        # X axis (red) — marker right
+        x_axis = (
+            int(cx + length * math.cos(yaw_rad)),
+            int(cy - length * math.sin(yaw_rad))
+        )
+
+        # Y axis (green) — marker forward
+        y_axis = (
+            int(cx + length * math.sin(yaw_rad)),
+            int(cy + length * math.cos(yaw_rad))
+        )
+
+        cv2.arrowedLine(img, (cx, cy), x_axis, (0, 0, 255), 2)
+        cv2.arrowedLine(img, (cx, cy), y_axis, (0, 255, 0), 2)
+
+        cv2.putText(img, "X", x_axis,
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 2)
+        cv2.putText(img, "Y", y_axis,
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
 
 
     def publish_crate_poses(self):
