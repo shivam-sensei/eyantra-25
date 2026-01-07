@@ -58,7 +58,7 @@ class HolonomicPIDController(Node):
             self.get_logger().error(f"Failed to connect to MQTT: {e}")     
         
         
-        self.STATE = "APPROACH"
+        self.STATE = "ALIGN"
         # ---------------- Robot Parameters ----------------
         self.robot_id = None
         self.current_pose = None
@@ -67,7 +67,7 @@ class HolonomicPIDController(Node):
         self.goal_limit = {
             'x': 5.0,
             'y':5.0,
-            'theta':0.09
+            'theta':0.1
         }
 
         # ---------------- Goal Definitions ----------------
@@ -82,7 +82,7 @@ class HolonomicPIDController(Node):
         self.array = np.array([
             [-math.sin(math.radians(30)), -math.sin(math.radians(150)), 1.0],
             [math.cos(math.radians(30)), math.cos(math.radians(150)), 0.0],
-            [0.175, 0.175, 0.175] 
+            [0.185, 0.185, 0.185] 
         ])
 
         #----------------DO NOT CHNAGE----------------------
@@ -91,7 +91,7 @@ class HolonomicPIDController(Node):
         self.pid_params = {
             'x': {'kp': 0.05, 'ki': 0.00, 'kd': 0.01, 'max_out': self.max_vel},
             'y': {'kp': 0.05, 'ki': 0.00, 'kd': 0.01, 'max_out': self.max_vel},
-            'theta': {'kp': 1.3, 'ki': 0.00, 'kd': 0.5, 'max_out': self.max_vel * 2}
+            'theta': {'kp': 50.3, 'ki': 0.00, 'kd': 13.5, 'max_out': self.max_vel * 2}
         }
 
         # Initialize PIDs
@@ -219,11 +219,12 @@ class HolonomicPIDController(Node):
         angle_to_goal = math.atan2(dy, dx)
 
         if self.STATE == "ALIGN":
-            error_theta = -(angle_to_goal - bot_theta)
+            print("ALIGNING")
+            error_theta = (angle_to_goal - bot_theta)
             error_theta = math.atan2(math.sin(error_theta), math.cos(error_theta))
             print(angle_to_goal,error_theta,",",bot_theta)
             self.calculate_publish(0,0,error_theta,dt)
-            if (abs(error_theta)< self.goal_limit['theta']):
+            if ((error_theta)> -1.5 and (error_theta) < -1.1):
                 self.pid_x.reset()
                 self.pid_y.reset()
                 self.pid_theta.reset()
@@ -233,7 +234,7 @@ class HolonomicPIDController(Node):
                     self.PWM_NEUTRAL
                 ])
 
-                self.STATE = "LINK" 
+                self.STATE = "APPROACH"
                 return
             
             
@@ -241,21 +242,22 @@ class HolonomicPIDController(Node):
             error_x = (goal_x - bot_x )
             error_y = (goal_y - bot_y)
             distance = math.sqrt(error_x*error_x + error_y*error_y)
-            x_std =  math.cos(bot_theta)*error_x + math.sin(bot_theta)*error_y
-            y_std = -math.sin(bot_theta)*error_x + math.cos(bot_theta)*error_y
+            # x_std =  math.cos(bot_theta)*error_x + math.sin(bot_theta)*error_y
+            # y_std = -math.sin(bot_theta)*error_x + math.cos(bot_theta)*error_y
 
-            # standard robot frame → your robot frame (X down, Y right)
-            e_x_robot =  y_std        # Xᵣ points down
-            e_y_robot = -x_std        # Yᵣ points right
+            # # standard robot frame → your robot frame (X down, Y right)
+            # e_x_robot =  y_std        # Xᵣ points down
+            # e_y_robot = -x_std        # Yᵣ points right
 
-            print("approach distance:",error_x,error_y, distance) 
-            self.calculate_publish(e_x_robot,e_y_robot,0,dt)
+            # print("approach distance:",error_x,error_y, distance) 
+            # self.calculate_publish(e_x_robot,e_y_robot,0,dt)
+            self.publish_wheel_velocities([1145.0,1845.0,1500.0],60.0)
             if (distance < 145):
                 self.pid_x.reset()
                 self.pid_y.reset()
                 self.pid_theta.reset()
                 self.publish_wheel_velocities([1500.0,1500.0,1500.0],90.0)
-                self.STATE = "ALIGN"
+                self.STATE = "LINK"
                 return
             
         if self.STATE == "LINK":
@@ -322,12 +324,12 @@ class HolonomicPIDController(Node):
         vy = self.pid_y.compute(ey, dt)
         omega = self.pid_theta.compute(eomega, dt)
 
-        error_matrix = np.array([vx, vy, omega])
+        error_matrix = np.array([vy, vx, omega])
         wheel_vel = np.linalg.pinv(self.array) @ error_matrix
 
         # normalize
-        max_val = max(abs(wheel_vel[0]), abs(wheel_vel[1]), abs(wheel_vel[2]), 1.0)
-        wheel_vel = wheel_vel / max_val
+        # max_val = max(abs(wheel_vel[0]), abs(wheel_vel[1]), abs(wheel_vel[2]), 1.0)
+        wheel_vel = wheel_vel / self.MAX_WHEEL_SPEED
 
         pwm = [
             self.vel_to_pwm(wheel_vel[0]),
