@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import time
 import rclpy
 from rclpy.node import Node
 # import hb_interface messages
@@ -23,8 +24,6 @@ class PID:
         kd_error = (error - self.prev_error)/dt
         value = error*self.kp + kd_error*self.kd
         self.prev_error = error
-        if abs(value) < 50 and abs(value) > 5 and self.kp < 0.4:
-            value = math.copysign(60,value)
         return value
     
     
@@ -37,7 +36,7 @@ class HolonomicPIDController(Node):
     def __init__(self):
         super().__init__('holonomic_pid_controller')  # initializing ros node
         # ----------MQTT-----------------
-        self.broker_IP = "192.168.100.12"
+        self.broker_IP = "10.237.15.63"
         self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
         self.mqtt_client.on_connect = self.on_connect
         self.mqtt_client.on_message = self.on_message
@@ -45,10 +44,16 @@ class HolonomicPIDController(Node):
         self.mqtt_connected = False
 
         self.PWM_NEUTRAL = 1495
-        self.PWM_DEADBAND = 50
-        self.PWM_MIN = 745
-        self.PWM_MAX = 2245
-        self.MAX_WHEEL_SPEED = 150.0
+        self.PWM_MIN = 845
+        self.PWM_MAX = 2145
+        self.prev_speed = None
+        self.last_mqtt_time = 0.0
+        self.MQTT_RATE_LIMIT = 0.1   # seconds → 10 Hz
+        self.PWM_TOL = 3.0    
+        self.last_sent_speed = None
+        self.last_send_time = 0.0
+        self.KEEPALIVE_TIME = 0.5   
+        self.MAX = 200.0
 
         try:
             self.get_logger().info(f"Connecting to MQTT Broker at {self.broker_IP}...")
@@ -58,7 +63,7 @@ class HolonomicPIDController(Node):
             self.get_logger().error(f"Failed to connect to MQTT: {e}")     
         
         
-        self.STATE = "ALIGN"
+        self.STATE = "APPROACH"
         # ---------------- Robot Parameters ----------------
         self.robot_id = None
         self.current_pose = None
@@ -89,9 +94,9 @@ class HolonomicPIDController(Node):
         self.max_vel = 1.0
         # ---------------- PID Parameters ----------------
         self.pid_params = {
-            'x': {'kp': 0.05, 'ki': 0.00, 'kd': 0.01, 'max_out': self.max_vel},
-            'y': {'kp': 0.05, 'ki': 0.00, 'kd': 0.01, 'max_out': self.max_vel},
-            'theta': {'kp': 50.3, 'ki': 0.00, 'kd': 13.5, 'max_out': self.max_vel * 2}
+            'x': {'kp': 1.5, 'ki': 0.00, 'kd': 0.2, 'max_out': self.max_vel},
+            'y': {'kp': 1.5, 'ki': 0.00, 'kd': 0.2, 'max_out': self.max_vel},
+            'theta': {'kp': 0.0, 'ki': 0.00, 'kd': 0.0, 'max_out': self.max_vel * 2}
         }
 
         # Initialize PIDs
@@ -151,7 +156,8 @@ class HolonomicPIDController(Node):
         pose = msg.poses[0]
         self.goalpose = [pose.x,pose.y,pose.w]
         self.crate_id = pose.id
-    
+
+
     def attach(self,botname,crate):
         self.Attach_req.data = json.dumps({
                 "model1_name": f"hb_{botname}",
@@ -169,10 +175,8 @@ class HolonomicPIDController(Node):
             return self.PWM_NEUTRAL
 
         if vel > 0:
-            # CCW
             return int(self.PWM_NEUTRAL + vel * (self.PWM_MAX - self.PWM_NEUTRAL))
         else:
-            # CW
             return int(self.PWM_NEUTRAL + vel * (self.PWM_NEUTRAL - self.PWM_MIN))
             
         
@@ -242,16 +246,13 @@ class HolonomicPIDController(Node):
             error_x = (goal_x - bot_x )
             error_y = (goal_y - bot_y)
             distance = math.sqrt(error_x*error_x + error_y*error_y)
-            # x_std =  math.cos(bot_theta)*error_x + math.sin(bot_theta)*error_y
-            # y_std = -math.sin(bot_theta)*error_x + math.cos(bot_theta)*error_y
+            x_std =  math.cos(bot_theta)*error_x + math.sin(bot_theta)*error_y
+            y_std = -math.sin(bot_theta)*error_x + math.cos(bot_theta)*error_y
 
-            # # standard robot frame → your robot frame (X down, Y right)
-            # e_x_robot =  y_std        # Xᵣ points down
-            # e_y_robot = -x_std        # Yᵣ points right
 
-            # print("approach distance:",error_x,error_y, distance) 
-            # self.calculate_publish(e_x_robot,e_y_robot,0,dt)
-            self.publish_wheel_velocities([1145.0,1845.0,1500.0],60.0)
+            print("approach distance:",error_x,error_y, distance) 
+            self.calculate_publish(x_std,y_std,0,dt)
+            # self.publish_wheel_velocities([1145.0,1845.0,1500.0],60.0)
             if (distance < 145):
                 self.pid_x.reset()
                 self.pid_y.reset()
@@ -323,29 +324,21 @@ class HolonomicPIDController(Node):
         vx = self.pid_x.compute(ex, dt)
         vy = self.pid_y.compute(ey, dt)
         omega = self.pid_theta.compute(eomega, dt)
+        
+        wheel_vel = np.linalg.pinv(self.array) @ np.array([-vx, vy, omega])
 
-        error_matrix = np.array([vy, vx, omega])
-        wheel_vel = np.linalg.pinv(self.array) @ error_matrix
-
-        # normalize
-        # max_val = max(abs(wheel_vel[0]), abs(wheel_vel[1]), abs(wheel_vel[2]), 1.0)
-        wheel_vel = wheel_vel / self.MAX_WHEEL_SPEED
-
-        pwm = [
-            self.vel_to_pwm(wheel_vel[0]),
-            self.vel_to_pwm(wheel_vel[1]),
-            self.vel_to_pwm(wheel_vel[2])
-        ]
-
+        wheel_vel = wheel_vel/self.MAX
+        
+        pwm = [self.vel_to_pwm(w) for w in wheel_vel]
         self.publish_wheel_velocities(pwm, 90.0)
 
 
 
 
     # ---------------- Publisher ----------------
-    def publish_wheel_velocities(self,wheel_vel=[1500.0,1500.0,1500.0],arm_state = 0.0, elbow = 90.0):
-        # Wheel velocity array (Float64MultiArray)
-        # Order: [Left wheel speed, Right wheel speed, Rear wheel speed]
+    def publish_wheel_velocities(self, wheel_vel=[1500.0,1500.0,1500.0],arm_state=0.0, elbow=60.0):
+
+        # --- ROS publish (always) ---
         bot_msg_array = BotCmdArray()
         bot_msg = BotCmd()
         bot_msg.id = self.robot_id
@@ -356,18 +349,22 @@ class HolonomicPIDController(Node):
         bot_msg.elbow = float(elbow)
         bot_msg_array.cmds.append(bot_msg)
         self.publisher.publish(bot_msg_array)
+
         if self.mqtt_connected:
             payload = {
-                    "m1" : wheel_vel[0],
-                    "m2" : wheel_vel[1],
-                    "m3" : wheel_vel[2],
-                    "arm" : {"base" : 60, "elbow" : 60},
-                    "mos" : False
-                    }
-            self.mqtt_client.publish("esp/cmd/1", json.dumps(payload), qos=1)
-            print(wheel_vel)
-            self.mqtt_client.publish("esp/led","LED_ON")
-    
+                "m1": wheel_vel[0],
+                "m2": wheel_vel[1],
+                "m3": wheel_vel[2],
+                "arm": {"base": 60, "elbow": 60},
+                "mos": False
+            }
+            self.mqtt_client.publish("esp/cmd/1", json.dumps(payload), qos=0)
+            self.mqtt_client.publish("esp/led", "LED_ON")
+            print("MQTT CMD:", wheel_vel)
+
+        # Wheel velocity array (Float64MultiArray)
+        # Order: [Left wheel speed, Right wheel speed, Rear wheel speed]
+
     def convert_to_pi(self,angle):
         radian = math.radians(angle) 
         to_pi = math.atan2(math.sin(radian), math.cos(radian))
