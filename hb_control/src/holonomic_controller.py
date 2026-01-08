@@ -50,7 +50,7 @@ class HolonomicPIDController(Node):
         self.last_sent_speed = None
         self.last_send_time = 0.0
         self.KEEPALIVE_TIME = 0.5   
-        self.MAX = 600.0
+        self.MAX = 200.0
 
         try:
             self.get_logger().info(f"Connecting to MQTT Broker at {self.broker_IP}...")
@@ -91,8 +91,8 @@ class HolonomicPIDController(Node):
         self.max_vel = 1.0
         # ---------------- PID Parameters ----------------
         self.pid_params = {
-            'x': {'kp': 1.5, 'ki': 0.00, 'kd': 0.2, 'max_out': self.max_vel},
-            'y': {'kp': 1.5, 'ki': 0.00, 'kd': 0.2, 'max_out': self.max_vel},
+            'x': {'kp': 3.5, 'ki': 0.00, 'kd': 0.5, 'max_out': self.max_vel},
+            'y': {'kp': 3.5, 'ki': 0.00, 'kd': 0.5, 'max_out': self.max_vel},
             'theta': {'kp': 0.0, 'ki': 0.00, 'kd': 0.0, 'max_out': self.max_vel * 2}
         }
 
@@ -231,25 +231,26 @@ class HolonomicPIDController(Node):
             error_x = (goal_x - bot_x )
             error_y = (goal_y - bot_y)
             distance = math.sqrt(error_x*error_x + error_y*error_y)
-            x_std =  math.cos(bot_theta)*error_x + math.sin(bot_theta)*error_y
-            y_std = -math.sin(bot_theta)*error_x + math.cos(bot_theta)*error_y
-
-
-            print("approach distance:",error_x,error_y, distance) 
-            self.calculate_publish(x_std,y_std,0,dt)
-            # self.publish_wheel_velocities([1145.0,1845.0,1500.0],60.0)
             if (distance < 145):
+                self.publish_wheel_velocities([0.0,0.0,0.0],90.0)
+                # time.sleep(3.0)
                 self.pid_x.reset()
                 self.pid_y.reset()
                 self.pid_theta.reset()
-                self.publish_wheel_velocities([1500.0,1500.0,1500.0],90.0)
-                self.STATE = "LINK"
+                # self.STATE = "LINK"
                 return
+            # x_std =  math.cos(bot_theta)*error_x + math.sin(bot_theta)*error_y
+            # y_std = -math.sin(bot_theta)*error_x + math.cos(bot_theta)*error_y
+
+
+            print("approach distance:",error_x,error_y, distance) 
+            self.calculate_publish(error_x,error_y,0,dt)
+            # self.publish_wheel_velocities([1145.0,1845.0,0.0],60.0)
             
         if self.STATE == "LINK":
             if not self.link_attached:
                 print(self.attach("crystal",self.crate_id))
-            self.publish_wheel_velocities([1500.0,1500.0,1500.0],45.0)
+            self.publish_wheel_velocities([0.0,0.0,0.0],45.0)
             self.STATE = "DROPZONE"
         
         if self.STATE == "DROPZONE":
@@ -269,7 +270,7 @@ class HolonomicPIDController(Node):
                 self.pid_x.reset()
                 self.pid_y.reset()
                 self.pid_theta.reset()
-                self.publish_wheel_velocities([1500.0,1500.0,1500.0],45.0)
+                self.publish_wheel_velocities([0.0,0.0,0.0],45.0)
                 self.STATE = "DETACH"
                 return
             
@@ -293,7 +294,7 @@ class HolonomicPIDController(Node):
                 self.pid_x.reset()
                 self.pid_y.reset()
                 self.pid_theta.reset()
-                self.publish_wheel_velocities([1500.0,1500.0,1500.0],0.0,0.0)
+                self.publish_wheel_velocities([0.0,0.0,0.0],0.0,0.0)
                 self.STATE = "DONE"
                 return
         
@@ -305,12 +306,16 @@ class HolonomicPIDController(Node):
     def calculate_publish(self, ex, ey, eomega, dt):
         if dt <= 1e-4:
             return
-
+    
+        _,_,bot_theta = self.current_pose
         vx = self.pid_x.compute(ex, dt)
         vy = self.pid_y.compute(ey, dt)
         omega = self.pid_theta.compute(eomega, dt)
+
+        x_std =  math.cos(bot_theta)*vx + math.sin(bot_theta)*vy
+        y_std = -math.sin(bot_theta)*vx + math.cos(bot_theta)*vy
         
-        wheel_vel = np.linalg.pinv(self.array) @ np.array([-vx, vy, omega])
+        wheel_vel = np.linalg.pinv(self.array) @ np.array([-x_std, y_std, omega])
 
         wheel_vel = wheel_vel/self.MAX
         self.publish_wheel_velocities(wheel_vel, 90.0)
@@ -332,7 +337,7 @@ class HolonomicPIDController(Node):
 
 
     # ---------------- Publisher ----------------
-    def publish_wheel_velocities(self, wheel_vel=[1500.0,1500.0,1500.0],arm_state=0.0, elbow=60.0):
+    def publish_wheel_velocities(self, wheel_vel=[0.0,0.0,0.0],arm_state=0.0, elbow=60.0):
 
         bot_msg_array = BotCmdArray()
         bot_msg = BotCmd()
