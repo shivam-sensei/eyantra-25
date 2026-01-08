@@ -42,10 +42,7 @@ class HolonomicPIDController(Node):
         self.mqtt_client.on_message = self.on_message
         self.mqtt_client.on_disconnect = self.on_disconnect
         self.mqtt_connected = False
-
-        self.PWM_NEUTRAL = 1495
-        self.PWM_MIN = 845
-        self.PWM_MAX = 2145
+        self.last_sent_payload = None
         self.prev_speed = None
         self.last_mqtt_time = 0.0
         self.MQTT_RATE_LIMIT = 0.1   # seconds → 10 Hz
@@ -53,7 +50,7 @@ class HolonomicPIDController(Node):
         self.last_sent_speed = None
         self.last_send_time = 0.0
         self.KEEPALIVE_TIME = 0.5   
-        self.MAX = 200.0
+        self.MAX = 600.0
 
         try:
             self.get_logger().info(f"Connecting to MQTT Broker at {self.broker_IP}...")
@@ -87,7 +84,7 @@ class HolonomicPIDController(Node):
         self.array = np.array([
             [-math.sin(math.radians(30)), -math.sin(math.radians(150)), 1.0],
             [math.cos(math.radians(30)), math.cos(math.radians(150)), 0.0],
-            [0.185, 0.185, 0.185] 
+            [1.0, 1.0, 1.0] 
         ])
 
         #----------------DO NOT CHNAGE----------------------
@@ -167,17 +164,6 @@ class HolonomicPIDController(Node):
             })
         self.future = self.attach_cli.call_async(self.Attach_req)
         self.link_attached = True
-    
-    def vel_to_pwm(self, vel):
-        vel = max(-1.0, min(1.0, vel))
-
-        if abs(vel) < 0.05:
-            return self.PWM_NEUTRAL
-
-        if vel > 0:
-            return int(self.PWM_NEUTRAL + vel * (self.PWM_MAX - self.PWM_NEUTRAL))
-        else:
-            return int(self.PWM_NEUTRAL + vel * (self.PWM_NEUTRAL - self.PWM_MIN))
             
         
 
@@ -207,7 +193,6 @@ class HolonomicPIDController(Node):
         if self.current_pose is None or self.goalpose is None:
             return
 
-        
         # Time delta
         now = self.get_clock().now()
         dt = (now - self.last_time).nanoseconds / 1e9
@@ -328,17 +313,27 @@ class HolonomicPIDController(Node):
         wheel_vel = np.linalg.pinv(self.array) @ np.array([-vx, vy, omega])
 
         wheel_vel = wheel_vel/self.MAX
+        self.publish_wheel_velocities(wheel_vel, 90.0)
+    
+    
+    def publish_mqtt(self, payload):
+        now = time.time()
         
-        pwm = [self.vel_to_pwm(w) for w in wheel_vel]
-        self.publish_wheel_velocities(pwm, 90.0)
-
+        if now - self.last_mqtt_time < 0.05:  # 20 Hz max
+            return
+        
+        if payload == self.last_sent_payload:
+            return
+        
+        self.last_sent_payload = payload
+        self.last_mqtt_time = now
+        self.mqtt_client.publish("esp/cmd/1", json.dumps(payload), qos=0,retain=False)
 
 
 
     # ---------------- Publisher ----------------
     def publish_wheel_velocities(self, wheel_vel=[1500.0,1500.0,1500.0],arm_state=0.0, elbow=60.0):
 
-        # --- ROS publish (always) ---
         bot_msg_array = BotCmdArray()
         bot_msg = BotCmd()
         bot_msg.id = self.robot_id
@@ -349,7 +344,6 @@ class HolonomicPIDController(Node):
         bot_msg.elbow = float(elbow)
         bot_msg_array.cmds.append(bot_msg)
         self.publisher.publish(bot_msg_array)
-
         if self.mqtt_connected:
             payload = {
                 "m1": wheel_vel[0],
@@ -358,7 +352,7 @@ class HolonomicPIDController(Node):
                 "arm": {"base": 60, "elbow": 60},
                 "mos": False
             }
-            self.mqtt_client.publish("esp/cmd/1", json.dumps(payload), qos=0)
+            self.publish_mqtt(payload)
             self.mqtt_client.publish("esp/led", "LED_ON")
             print("MQTT CMD:", wheel_vel)
 
