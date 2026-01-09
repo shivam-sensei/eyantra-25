@@ -42,14 +42,6 @@ class HolonomicPIDController(Node):
         self.mqtt_client.on_message = self.on_message
         self.mqtt_client.on_disconnect = self.on_disconnect
         self.mqtt_connected = False
-        self.last_sent_payload = None
-        self.prev_speed = None
-        self.last_mqtt_time = 0.0
-        self.MQTT_RATE_LIMIT = 0.1   # seconds → 10 Hz
-        self.PWM_TOL = 3.0    
-        self.last_sent_speed = None
-        self.last_send_time = 0.0
-        self.KEEPALIVE_TIME = 0.5   
         self.MAX = 600.0
 
         try:
@@ -109,21 +101,11 @@ class HolonomicPIDController(Node):
 
 #SERVICES
         self.attach = self.create_service(Attach,"/Attach",self.attach_callback)
-        self.attach_cli = self.create_client(AttachLink, '/attach_link')
-        # Wait for the service to become available
-        self.Attach_req = AttachLink.Request()
-
-        self.detach_cli = self.create_client(DetachLink, '/detach_link')
-        # Wait for the service to become available
-
-        self.Detach_req = DetachLink.Request()
-
         self.ir_triggered = False
 
         self.publisher = self.create_publisher(
             BotCmdArray, '/bot_cmd', 10
         )
-        
         # ---------------- Timer for Control Loop ----------------
         self.timer = self.create_timer(0.03, self.control_cb)  # ~30ms = 33 Hz
     
@@ -362,11 +344,6 @@ class HolonomicPIDController(Node):
 
         # Wheel velocity array (Float64MultiArray)
         # Order: [Left wheel speed, Right wheel speed, Rear wheel speed]
-
-    def convert_to_pi(self,angle):
-        radian = math.radians(angle) 
-        to_pi = math.atan2(math.sin(radian), math.cos(radian))
-        return to_pi
 
 
 # ---------------------- Main Function -------------------------------------

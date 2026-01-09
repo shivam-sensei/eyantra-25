@@ -32,6 +32,7 @@ install(
   PROGRAMS
   src/holonomic_perception.py
   src/holonomic_controller.py
+  src/holonomic_controller_1.py
   src/camera_testing.py
   DESTINATION lib/${PROJECT_NAME}
 )
