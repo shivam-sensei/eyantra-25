@@ -7,7 +7,7 @@ import json
 import numpy as np
 import math
 from hb_interfaces.msg import Pose2D, Poses2D, BotCmd,BotCmdArray
-from linkattacher_msgs.srv import AttachLink,DetachLink
+from linkattacher_msgs.srv import AttachLink,DetachLink,Attach
 import paho.mqtt.client as mqtt
 import json
 
@@ -108,6 +108,7 @@ class HolonomicPIDController(Node):
         self.crate_sub = self.create_subscription(Poses2D,'/crate_pose', self.crate_pose_cb,10)
 
 #SERVICES
+        self.attach = self.create_service(Attach,"/Attach",self.attach_callback)
         self.attach_cli = self.create_client(AttachLink, '/attach_link')
         # Wait for the service to become available
         self.Attach_req = AttachLink.Request()
@@ -125,6 +126,31 @@ class HolonomicPIDController(Node):
         
         # ---------------- Timer for Control Loop ----------------
         self.timer = self.create_timer(0.03, self.control_cb)  # ~30ms = 33 Hz
+    
+    def attach_callback(self,request,response):
+        if request.flag:
+            status = 1
+        else:
+            status = 0
+        robot = request.robot_id
+        if not self.mqtt_connected:
+            response.success = False
+            return response
+        
+        if robot == 0:
+            id = 1
+        elif robot == 2:
+            id = 2
+        else:
+            id = 3 
+
+        print("ATTACHING LINK VIA MQTT")
+        payload = {
+            "status": status
+        }
+        self.publish_mqtt(f"esp/mos", payload)
+        response.success = True
+        return response
 
     # MQTT main functions
     def on_connect(self, client, userdata, flags, rc):
@@ -158,29 +184,6 @@ class HolonomicPIDController(Node):
         self.goalpose = [pose.x,pose.y,pose.w]
         self.crate_id = pose.id
 
-
-    def attach(self,botname,crate):
-        self.Attach_req.data = json.dumps({
-                "model1_name": f"hb_{botname}",
-                "link1_name": "arm_link_2",
-                "model2_name": f"crate_{self.crate_colour(crate)}_{crate}",
-                "link2_name": f"box_link_{crate}"
-            })
-        self.future = self.attach_cli.call_async(self.Attach_req)
-        self.link_attached = True
-            
-        
-
-    def detach(self,botname,crate):
-        self.Detach_req.data = json.dumps({
-                "model1_name": f"hb_{botname}",
-                "link1_name": "arm_link_2",
-                "model2_name": f"crate_{self.crate_colour(crate)}_{crate}",
-                "link2_name": f"box_link_{crate}"
-            })
-        self.future = self.detach_cli.call_async(self.Detach_req)
-        self.link_detach = True
-    
     def crate_colour(self,id):
         a = id%3
         if a == 0:
@@ -246,8 +249,13 @@ class HolonomicPIDController(Node):
             self.publish_wheel_velocities([0.0,0.0,0.0],75.0,80.0)
             time.sleep(2.0) # wait for stability
             self.publish_wheel_velocities([0.0,0.0,0.0],75.0,55.0)
-            time.sleep(1.0)
-            self.mos_control(1)
+            # time.sleep(1.0)
+            req = Attach.Request()
+            req.robot_id = self.robot_id
+            req.flag = True
+            res = Attach.Response()
+            self.attach_callback(req, res)
+            print(res.success)
             time.sleep(2.0)
             self.STATE = "DROPZONE"
         
@@ -274,7 +282,12 @@ class HolonomicPIDController(Node):
             
             
         if self.STATE == "DETACH":
-            self.mos_control(0)
+            req = Attach.Request()
+            req.robot_id = self.robot_id
+            req.flag = False
+            res = Attach.Response()
+            self.attach_callback(req, res)
+            print(res.success)
             self.publish_wheel_velocities([0.0,0.0,0.0],8.0,80.0)
             self.STATE = "DOCK"
 
@@ -323,14 +336,7 @@ class HolonomicPIDController(Node):
     def publish_mqtt(self, topic,payload):
         self.mqtt_client.publish(topic, json.dumps(payload), qos=1,retain=False)
 
-    
-    def mos_control(self, status):
-        if not self.mqtt_connected:
-            return
-        
-        payload = {"status": status}
-        self.publish_mqtt("esp/mos", payload)
-        print("MQTT MOSFET CMD:", status)
+
 
     # ---------------- Publisher ----------------
     def publish_wheel_velocities(self, wheel_vel=[0.0,0.0,0.0],arm_state=75.0, elbow=80.0):
