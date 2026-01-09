@@ -36,7 +36,7 @@ class HolonomicPIDController(Node):
     def __init__(self):
         super().__init__('holonomic_pid_controller')  # initializing ros node
         # ----------MQTT-----------------
-        self.broker_IP = "10.237.15.63"
+        self.broker_IP = "192.168.100.12"
         self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
         self.mqtt_client.on_connect = self.on_connect
         self.mqtt_client.on_message = self.on_message
@@ -50,7 +50,7 @@ class HolonomicPIDController(Node):
         self.last_sent_speed = None
         self.last_send_time = 0.0
         self.KEEPALIVE_TIME = 0.5   
-        self.MAX = 200.0
+        self.MAX = 600.0
 
         try:
             self.get_logger().info(f"Connecting to MQTT Broker at {self.broker_IP}...")
@@ -91,9 +91,9 @@ class HolonomicPIDController(Node):
         self.max_vel = 1.0
         # ---------------- PID Parameters ----------------
         self.pid_params = {
-            'x': {'kp': 3.5, 'ki': 0.00, 'kd': 0.5, 'max_out': self.max_vel},
-            'y': {'kp': 3.5, 'ki': 0.00, 'kd': 0.5, 'max_out': self.max_vel},
-            'theta': {'kp': 0.0, 'ki': 0.00, 'kd': 0.0, 'max_out': self.max_vel * 2}
+            'x': {'kp': 4.7, 'ki': 0.00, 'kd': 1.2, 'max_out': self.max_vel},
+            'y': {'kp': 4.7, 'ki': 0.00, 'kd': 1.2, 'max_out': self.max_vel},
+            'theta': {'kp': 3.0, 'ki': 0.00, 'kd': 0.3, 'max_out': self.max_vel * 2}
         }
 
         # Initialize PIDs
@@ -117,6 +117,7 @@ class HolonomicPIDController(Node):
 
         self.Detach_req = DetachLink.Request()
 
+        self.ir_triggered = False
 
         self.publisher = self.create_publisher(
             BotCmdArray, '/bot_cmd', 10
@@ -136,7 +137,10 @@ class HolonomicPIDController(Node):
             self.get_logger().error(f"MQTT Connection failed with code {rc}")
 
     def on_message(self, client, userdata, msg):
-        self.get_logger().info(f"MQTT Message: [{msg.topic}] {msg.payload.decode()}")
+        if msg.payload.decode() == "0.00":
+            self.ir_triggered = True
+            print("IR SENSOR TRIGGERED")
+        
 
     def on_disconnect(self, client, userdata, rc):
         self.get_logger().warn("Disconnected from MQTT broker")
@@ -210,74 +214,68 @@ class HolonomicPIDController(Node):
         if self.STATE == "ALIGN":
             print("ALIGNING")
             error_theta = (angle_to_goal - bot_theta)
-            error_theta = math.atan2(math.sin(error_theta), math.cos(error_theta))
-            print(angle_to_goal,error_theta,",",bot_theta)
-            self.calculate_publish(0,0,error_theta,dt)
-            if ((error_theta)> -1.5 and (error_theta) < -1.1):
+            # print(angle_to_goal,error_theta,",",bot_theta)
+            print("IR TRIGGERED:",self.ir_triggered)
+            if self.ir_triggered:
                 self.pid_x.reset()
                 self.pid_y.reset()
                 self.pid_theta.reset()
-                self.publish_wheel_velocities([
-                    self.PWM_NEUTRAL,
-                    self.PWM_NEUTRAL,
-                    self.PWM_NEUTRAL
-                ])
-
-                self.STATE = "APPROACH"
+                self.publish_wheel_velocities([0.0,0.0,0.0],75.0,80.0)
+                self.ir_triggered = False
+                self.STATE = "LINK"
                 return
-            
+            # self.calculate_publish(0,0,30.0,dt)
+            self.publish_wheel_velocities([0.4,0.4,0.4],75.0,80.0)
             
         if self.STATE == "APPROACH":
             error_x = (goal_x - bot_x )
             error_y = (goal_y - bot_y)
             distance = math.sqrt(error_x*error_x + error_y*error_y)
-            if (distance < 145):
-                self.publish_wheel_velocities([0.0,0.0,0.0],90.0)
-                # time.sleep(3.0)
+            if (distance < 180):
+                self.publish_wheel_velocities([0.0,0.0,0.0],80.0)
                 self.pid_x.reset()
                 self.pid_y.reset()
                 self.pid_theta.reset()
-                # self.STATE = "LINK"
+                self.STATE = "ALIGN"
                 return
-            # x_std =  math.cos(bot_theta)*error_x + math.sin(bot_theta)*error_y
-            # y_std = -math.sin(bot_theta)*error_x + math.cos(bot_theta)*error_y
-
 
             print("approach distance:",error_x,error_y, distance) 
             self.calculate_publish(error_x,error_y,0,dt)
-            # self.publish_wheel_velocities([1145.0,1845.0,0.0],60.0)
             
         if self.STATE == "LINK":
-            if not self.link_attached:
-                print(self.attach("crystal",self.crate_id))
-            self.publish_wheel_velocities([0.0,0.0,0.0],45.0)
+            self.publish_wheel_velocities([0.0,0.0,0.0],75.0,80.0)
+            time.sleep(2.0) # wait for stability
+            self.publish_wheel_velocities([0.0,0.0,0.0],75.0,55.0)
+            time.sleep(1.0)
+            self.mos_control(1)
+            time.sleep(2.0)
             self.STATE = "DROPZONE"
         
         if self.STATE == "DROPZONE":
             goal_x, goal_y, goal_theta = self.d1
             error_x = goal_x - bot_x 
             error_y = goal_y - bot_y
+
             angle_to_goal = math.atan2(error_x, error_y) - math.pi/2
             error_theta = -(angle_to_goal - bot_theta)
             error_theta = math.atan2(math.sin(error_theta), math.cos(error_theta))
+
             distance = math.sqrt(error_x*error_x + error_y*error_y)
-            e_x_robot =  math.cos(bot_theta)*error_x + math.sin(bot_theta)*error_y
-            e_y_robot = -math.sin(bot_theta)*error_x + math.cos(bot_theta)*error_y
-            # error_theta = goal_theta-bot_theta
-            self.calculate_publish(e_x_robot,e_y_robot,error_theta,dt)
-            print(error_x,error_y, distance)
-            if (distance < 25):
+            if (distance < 20):
                 self.pid_x.reset()
                 self.pid_y.reset()
                 self.pid_theta.reset()
-                self.publish_wheel_velocities([0.0,0.0,0.0],45.0)
+                self.publish_wheel_velocities([0.0,0.0,0.0],75.0,80.0)
                 self.STATE = "DETACH"
                 return
             
+            self.calculate_publish(error_x,error_y,0,dt)
+            print("Dropzone Distance", distance)
+            
+            
         if self.STATE == "DETACH":
-            if not self.link_detach:
-                print(self.detach("crystal",self.crate_id))
-            self.publish_wheel_velocities([0.0,0.0,0.0],45.0)
+            self.mos_control(0)
+            self.publish_wheel_velocities([0.0,0.0,0.0],8.0,80.0)
             self.STATE = "DOCK"
 
         if self.STATE == "DOCK":
@@ -285,20 +283,21 @@ class HolonomicPIDController(Node):
             error_x = goal_x - bot_x 
             error_y = goal_y - bot_y
             distance = math.sqrt(error_x*error_x + error_y*error_y)
-            e_x_robot =  math.cos(bot_theta)*error_x + math.sin(bot_theta)*error_y
-            e_y_robot = -math.sin(bot_theta)*error_x + math.cos(bot_theta)*error_y
-            # error_theta = goal_theta-bot_theta
-            self.calculate_publish(e_x_robot,e_y_robot,0,dt)
-            print(error_x,error_y, distance)
             if (distance < 25):
                 self.pid_x.reset()
                 self.pid_y.reset()
                 self.pid_theta.reset()
-                self.publish_wheel_velocities([0.0,0.0,0.0],0.0,0.0)
+                self.publish_wheel_velocities([0.0,0.0,0.0],75.0,50.0)
                 self.STATE = "DONE"
                 return
+            
+            self.calculate_publish(error_x,error_y,0,dt)
+            print("Dock distance", distance)
+            
         
         if self.STATE == "DONE":
+            print("TASK COMPLETED")
+            self.publish_wheel_velocities([0.0,0.0,0.0],75.0,50.0)
             return
 
 
@@ -321,24 +320,20 @@ class HolonomicPIDController(Node):
         self.publish_wheel_velocities(wheel_vel, 90.0)
     
     
-    def publish_mqtt(self, payload):
-        now = time.time()
-        
-        if now - self.last_mqtt_time < 0.05:  # 20 Hz max
+    def publish_mqtt(self, topic,payload):
+        self.mqtt_client.publish(topic, json.dumps(payload), qos=1,retain=False)
+
+    
+    def mos_control(self, status):
+        if not self.mqtt_connected:
             return
         
-        if payload == self.last_sent_payload:
-            return
-        
-        self.last_sent_payload = payload
-        self.last_mqtt_time = now
-        self.mqtt_client.publish("esp/cmd/1", json.dumps(payload), qos=0,retain=False)
-
-
+        payload = {"status": status}
+        self.publish_mqtt("esp/mos", payload)
+        print("MQTT MOSFET CMD:", status)
 
     # ---------------- Publisher ----------------
-    def publish_wheel_velocities(self, wheel_vel=[0.0,0.0,0.0],arm_state=0.0, elbow=60.0):
-
+    def publish_wheel_velocities(self, wheel_vel=[0.0,0.0,0.0],arm_state=75.0, elbow=80.0):
         bot_msg_array = BotCmdArray()
         bot_msg = BotCmd()
         bot_msg.id = self.robot_id
@@ -354,11 +349,9 @@ class HolonomicPIDController(Node):
                 "m1": wheel_vel[0],
                 "m2": wheel_vel[1],
                 "m3": wheel_vel[2],
-                "arm": {"base": 60, "elbow": 60},
-                "mos": False
+                "arm": {"base": 85.0, "elbow": elbow}
             }
-            self.publish_mqtt(payload)
-            self.mqtt_client.publish("esp/led", "LED_ON")
+            self.publish_mqtt("esp/cmd/1", payload)
             print("MQTT CMD:", wheel_vel)
 
         # Wheel velocity array (Float64MultiArray)
