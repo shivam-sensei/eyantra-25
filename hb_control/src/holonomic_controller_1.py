@@ -186,10 +186,10 @@ class HolonomicPIDController(Node):
             crate_id = pose.id
             self.crate_positions[crate_id] = [pose.x, pose.y, pose.w]
 
-            # Update goal if already assigned
-            for bot_id, bot_data in self.bots.items():
-                if bot_data["crate_id"] == crate_id:
-                    bot_data["goal"] = [pose.x, pose.y, pose.w]
+        # Update goal if already assigned
+        for bot_id, bot_data in self.bots.items():
+            if bot_data["crate_id"] == crate_id:
+                bot_data["goal"] = [pose.x, pose.y, pose.w]
                     
 
         # Try assigning crates if not done
