@@ -36,7 +36,7 @@ class HolonomicPIDController(Node):
     def __init__(self):
         super().__init__('holonomic_pid_controller')  # initializing ros node
         # ----------MQTT-----------------
-        self.broker_IP = "192.168.100.12"
+        self.broker_IP = "10.125.32.63"
         self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
         self.mqtt_client.on_connect = self.on_connect
         self.mqtt_client.on_message = self.on_message
@@ -130,7 +130,7 @@ class HolonomicPIDController(Node):
         payload = {
             "status": status
         }
-        self.publish_mqtt(f"esp/mos", payload)
+        self.publish_mqtt(f"esp/mos/4", payload)
         response.success = True
         return response
 
@@ -140,7 +140,7 @@ class HolonomicPIDController(Node):
             self.get_logger().info("Connected to MQTT Broker")
             # You can subscribe to topics here
             self.mqtt_connected = True
-            client.subscribe("esp/sensor/1")
+            client.subscribe("esp/sensor/4")
         else:
             self.get_logger().error(f"MQTT Connection failed with code {rc}")
 
@@ -205,19 +205,19 @@ class HolonomicPIDController(Node):
                 self.pid_x.reset()
                 self.pid_y.reset()
                 self.pid_theta.reset()
-                self.publish_wheel_velocities([0.0,0.0,0.0],75.0,80.0)
+                self.publish_wheel_velocities([0.0,0.0,0.0],180.0,80.0)
                 self.ir_triggered = False
                 self.STATE = "LINK"
                 return
             # self.calculate_publish(0,0,30.0,dt)
-            self.publish_wheel_velocities([0.4,0.4,0.4],75.0,80.0)
+            self.publish_wheel_velocities([0.4,0.4,0.4],155.0,80.0)
             
         if self.STATE == "APPROACH":
             error_x = (goal_x - bot_x )
             error_y = (goal_y - bot_y)
             distance = math.sqrt(error_x*error_x + error_y*error_y)
-            if (distance < 180):
-                self.publish_wheel_velocities([0.0,0.0,0.0],80.0)
+            if (distance < 175):
+                self.publish_wheel_velocities([0.0,0.0,0.0],170.0,80.0)
                 self.pid_x.reset()
                 self.pid_y.reset()
                 self.pid_theta.reset()
@@ -228,10 +228,10 @@ class HolonomicPIDController(Node):
             self.calculate_publish(error_x,error_y,0,dt)
             
         if self.STATE == "LINK":
-            self.publish_wheel_velocities([0.0,0.0,0.0],75.0,80.0)
-            time.sleep(2.0) # wait for stability
-            self.publish_wheel_velocities([0.0,0.0,0.0],75.0,55.0)
-            # time.sleep(1.0)
+            self.publish_wheel_velocities([0.0,0.0,0.0],180.0,80.0)
+            # time.sleep(2.0) # wait for stability
+            self.publish_wheel_velocities([0.0,0.0,0.0],180.0,55.0)
+            time.sleep(1.0)
             req = Attach.Request()
             req.robot_id = self.robot_id
             req.flag = True
@@ -239,6 +239,7 @@ class HolonomicPIDController(Node):
             self.attach_callback(req, res)
             print(res.success)
             time.sleep(2.0)
+            self.publish_wheel_velocities([0.0,0.0,0.0],155.0,55.0)
             self.STATE = "DROPZONE"
         
         if self.STATE == "DROPZONE":
@@ -255,7 +256,7 @@ class HolonomicPIDController(Node):
                 self.pid_x.reset()
                 self.pid_y.reset()
                 self.pid_theta.reset()
-                self.publish_wheel_velocities([0.0,0.0,0.0],75.0,80.0)
+                self.publish_wheel_velocities([0.0,0.0,0.0],155.0,80.0)
                 self.STATE = "DETACH"
                 return
             
@@ -270,7 +271,7 @@ class HolonomicPIDController(Node):
             res = Attach.Response()
             self.attach_callback(req, res)
             print(res.success)
-            self.publish_wheel_velocities([0.0,0.0,0.0],8.0,80.0)
+            self.publish_wheel_velocities([0.0,0.0,0.0],155.0,80.0)
             self.STATE = "DOCK"
 
         if self.STATE == "DOCK":
@@ -282,7 +283,7 @@ class HolonomicPIDController(Node):
                 self.pid_x.reset()
                 self.pid_y.reset()
                 self.pid_theta.reset()
-                self.publish_wheel_velocities([0.0,0.0,0.0],75.0,50.0)
+                self.publish_wheel_velocities([0.0,0.0,0.0],155.0,50.0)
                 self.STATE = "DONE"
                 return
             
@@ -292,7 +293,7 @@ class HolonomicPIDController(Node):
         
         if self.STATE == "DONE":
             print("TASK COMPLETED")
-            self.publish_wheel_velocities([0.0,0.0,0.0],75.0,50.0)
+            self.publish_wheel_velocities([0.0,0.0,0.0],155.0,50.0)
             return
 
 
@@ -312,7 +313,7 @@ class HolonomicPIDController(Node):
         wheel_vel = np.linalg.pinv(self.array) @ np.array([-x_std, y_std, omega])
 
         wheel_vel = wheel_vel/self.MAX
-        self.publish_wheel_velocities(wheel_vel, 90.0)
+        self.publish_wheel_velocities(wheel_vel, 155.0)
     
     
     def publish_mqtt(self, topic,payload):
@@ -321,7 +322,7 @@ class HolonomicPIDController(Node):
 
 
     # ---------------- Publisher ----------------
-    def publish_wheel_velocities(self, wheel_vel=[0.0,0.0,0.0],arm_state=75.0, elbow=80.0):
+    def publish_wheel_velocities(self, wheel_vel=[0.0,0.0,0.0],arm_state=155.0, elbow=80.0):
         bot_msg_array = BotCmdArray()
         bot_msg = BotCmd()
         bot_msg.id = self.robot_id
@@ -337,9 +338,9 @@ class HolonomicPIDController(Node):
                 "m1": wheel_vel[0],
                 "m2": wheel_vel[1],
                 "m3": wheel_vel[2],
-                "arm": {"base": 85.0, "elbow": elbow}
+                "arm": {"base": arm_state, "elbow": 80.0}
             }
-            self.publish_mqtt("esp/cmd/1", payload)
+            self.publish_mqtt("esp/cmd/4", payload)
             print("MQTT CMD:", wheel_vel)
 
         # Wheel velocity array (Float64MultiArray)

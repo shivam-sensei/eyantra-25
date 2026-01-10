@@ -9,7 +9,7 @@ from hb_interfaces.msg import Pose2D, Poses2D, BotCmd,BotCmdArray
 from linkattacher_msgs.srv import AttachLink,DetachLink,Attach
 import paho.mqtt.client as mqtt
 import json
-
+import time
 
 class PID:
     def __init__(self, kp, ki, kd, max_out=1.0):
@@ -25,8 +25,6 @@ class PID:
         kd_error = (error - self.prev_error)/dt
         value = error*self.kp + kd_error*self.kd + self.ki * self.integral
         self.prev_error = error
-        if abs(value) < 50 and abs(value) > 5 and self.kp < 0.4:
-            value = math.copysign(60,value)
         return value
     
     def reset(self):
@@ -39,7 +37,7 @@ class HolonomicPIDController(Node):
     def __init__(self):
         super().__init__('holonomic_pid_controller')
         # ---------------- MQTT Client Setup ----------------
-        self.broker_IP = "192.168.100.12"
+        self.broker_IP = "10.125.32.63"
         self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
         self.mqtt_client.on_connect = self.on_connect
         self.mqtt_client.on_message = self.on_message
@@ -83,14 +81,14 @@ class HolonomicPIDController(Node):
         
         # ---------------- PID Parameters ----------------
         self.pid_params = {
-            'x': {'kp': 0.3, 'ki': 0.0, 'kd': 0.07, 'max_out': self.max_vel},
-            'y': {'kp': 0.3, 'ki': 0.0, 'kd': 0.07, 'max_out': self.max_vel},
-            'theta': {'kp': 1.3, 'ki': 0.1, 'kd': 0.5, 'max_out': self.max_vel * 2}
+            'x': {'kp': 4.7, 'ki': 0.0, 'kd': 1.2, 'max_out': self.max_vel},
+            'y': {'kp': 4.7, 'ki': 0.0, 'kd': 1.2, 'max_out': self.max_vel},
+            'theta': {'kp': 3.0, 'ki': 0.1, 'kd': 0.3, 'max_out': self.max_vel * 2}
         }
         
         self.bots = {
             0: {
-                "state": "ALIGN",
+                "state": "APPROACH",
                 "name": "crystal",
                 "pose": None,
                 "goal": None,
@@ -100,10 +98,11 @@ class HolonomicPIDController(Node):
                 "pid_y": PID(**self.pid_params['y']),
                 "pid_theta": PID(**self.pid_params['theta']),
                 "last_time": self.get_clock().now(),
-                "ir_triggered": False
+                "ir_triggered": False,
+                
             },
             2: { 
-                "state": "ALIGN",
+                "state": "APPROACH",
                 "name": "frostbite",
                 "pose": None,
                 "goal": None,
@@ -116,7 +115,7 @@ class HolonomicPIDController(Node):
                 "ir_triggered": False
             },
             4: { 
-                "state": "ALIGN",
+                "state": "APPROACH",
                 "name": "glacio",
                 "pose": None,
                 "goal": None,
@@ -148,19 +147,12 @@ class HolonomicPIDController(Node):
         if not self.mqtt_connected:
             response.success = False
             return response
-        
-        if robot == 0:
-            id = 1
-        elif robot == 2:
-            id = 2
-        else:
-            id = 3 
 
         print("ATTACHING LINK VIA MQTT")
         payload = {
             "status": status
         }
-        self.publish_mqtt(f"esp/mos", payload)
+        self.publish_mqtt(f"esp/mos/{robot}", payload)
         response.success = True
         return response
     
@@ -217,42 +209,61 @@ class HolonomicPIDController(Node):
         return color
     
     def assign_crates_to_bots(self):
+        time.sleep(0.5)  # Ensure all crate positions are updated
+        print("\n=== Assigning crates to bots ===")
+
         assigned = set()
+
         bot_positions = {
             bot_id: bot_data["pose"]
             for bot_id, bot_data in self.bots.items()
             if bot_data["pose"] is not None
         }
 
+        print(f"[DEBUG] Active bots with pose: {bot_positions}")
+
         if not bot_positions:
+            print("[DEBUG] No bot poses available. Exiting assignment.")
             return
 
         available_crates = {
             cid: cpose for cid, cpose in self.crate_positions.items() if cid not in self.assigned_crates
         }
 
+        print(f"[DEBUG] Available crates: {available_crates}")
+
         for bot_id, bot_pose in bot_positions.items():
             if not available_crates:
+                print(f"[DEBUG] No more crates available to assign.")
                 break
 
             bx, by, _ = bot_pose
+            print(f"[DEBUG] Checking bot {bot_id} at ({bx:.2f}, {by:.2f})")
+
             nearest_crate, nearest_dist = None, float('inf')
+
             for cid, (cx, cy, _) in available_crates.items():
                 dist = math.sqrt((cx - bx)**2 + (cy - by)**2)
+                print(f"   -> crate {cid} at ({cx:.2f}, {cy:.2f}) dist={dist:.3f}")
+
                 if dist < nearest_dist:
                     nearest_crate, nearest_dist = cid, dist
 
             if nearest_crate is not None:
+                print(f"[DEBUG] Bot {bot_id} assigned crate {nearest_crate} (dist={nearest_dist:.3f})")
                 self.bots[bot_id]["crate_id"] = nearest_crate
                 self.bots[bot_id]["goal"] = available_crates[nearest_crate]
                 assigned.add(nearest_crate)
                 del available_crates[nearest_crate]
 
-
-        remaining = set(self.crate_positions.keys()) - assigned
+        remaining = set(self.crate_positions.keys()) - self.assigned_crates - assigned
         self.unassigned_crates = list(remaining)
-        
+
         self.assigned_crates |= assigned
+
+        print(f"[DEBUG] Assigned crates so far: {self.assigned_crates}")
+        print(f"[DEBUG] Remaining unassigned crates: {self.unassigned_crates}")
+        print("=== Assignment Complete ===\n")
 
 
     # ---------------- Control Loop ----------------
@@ -264,8 +275,6 @@ class HolonomicPIDController(Node):
             goalPose = bot_data["goal"]
             crate = bot_data["crate_id"]
             last_time = bot_data["last_time"]
-            lnk_attached = bot_data["link_attached"]
-            lnk_detach = bot_data["link_detach"]
             dock = bot_data["dock"]
             self.pid_x = bot_data["pid_x"]
             self.pid_y = bot_data["pid_y"]
@@ -293,105 +302,110 @@ class HolonomicPIDController(Node):
 
             if state == "ALIGN":
                 error_theta = -(angle_to_goal - bot_theta)
-                error_theta = math.atan2(math.sin(error_theta), math.cos(error_theta))
-                self.calculate_publish(0,0,error_theta,dt,bot_id)
-                if (abs(error_theta)< self.goal_limit['theta']):
+                print("IR TRIGGERED:",bot_data["ir_triggered"])
+                if bot_data["ir_triggered"]:
                     self.pid_x.reset()
                     self.pid_y.reset()
                     self.pid_theta.reset()
-                    self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0])
-                    bot_data["state"] = "APPROACH"
-                    continue  
+                    self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],155.0,80.0)
+                    bot_data["ir_triggered"] = False
+                    bot_data["state"] = "LINK"
+                    return
+            # self.calculate_publish(0,0,30.0,dt)
+                self.publish_wheel_velocities(bot_id,[0.4,0.4,0.4],180.0,80.0)
                 
             if state == "APPROACH":
-                error_x = goal_x - bot_x 
-                error_y = goal_y - bot_y
+                error_x = (goal_x - bot_x )
+                error_y = (goal_y - bot_y)
                 distance = math.sqrt(error_x*error_x + error_y*error_y)
-                e_x_robot =  math.cos(bot_theta)*error_x + math.sin(bot_theta)*error_y
-                e_y_robot = -math.sin(bot_theta)*error_x + math.cos(bot_theta)*error_y
-                self.calculate_publish(e_x_robot,e_y_robot,0,dt,bot_id)
-                if (distance < 145):
+                if (distance < 180):
+                    self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],180.0,80.0)
                     self.pid_x.reset()
                     self.pid_y.reset()
                     self.pid_theta.reset()
-                    self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],90.0)
-                    bot_data["state"] = "LINK"
-                    continue  
+                    bot_data["state"] = "ALIGN"
+                    return
+
+                print("approach distance:",error_x,error_y, distance) 
+                self.calculate_publish(error_x,error_y,0,dt,bot_id)
                 
             if state == "LINK":
-                if not lnk_attached:
-                    self.attach(f"{name}",crate)
-                    bot_data["link_attached"] = True
-                self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],45.0)
+                self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],180.0,80.0)
+                # time.sleep(2.0) # wait for stability
+                self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],180.0,55.0)
+                time.sleep(1.0)
+                req = Attach.Request()
+                req.robot_id = bot_id
+                req.flag = True
+                res = Attach.Response()
+                self.attach_callback(req, res)
+                print(res.success)
+                time.sleep(2.0)
                 bot_data["state"] = "DROPZONE"
-                continue  
             
             if state== "DROPZONE":
                 dropzones = {"red": self.d1, "green": self.d2, "blue": self.d3}
                 goal_x, goal_y, _ = dropzones[self.crate_colour(crate)]
                 error_x = goal_x - bot_x 
                 error_y = goal_y - bot_y
+
                 distance = math.sqrt(error_x*error_x + error_y*error_y)
-                e_x_robot =  math.cos(bot_theta)*error_x + math.sin(bot_theta)*error_y
-                e_y_robot = -math.sin(bot_theta)*error_x + math.cos(bot_theta)*error_y
-                self.calculate_publish(e_x_robot,e_y_robot,0,dt,bot_id)
-                if (distance < 70):
+                if (distance < 20):
                     self.pid_x.reset()
                     self.pid_y.reset()
                     self.pid_theta.reset()
-                    self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],45.0)
+                    self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],155.0,80.0)
                     bot_data["state"] = "DETACH"
-                    continue  
+                    return
+                
+                self.calculate_publish(error_x,error_y,0,dt,bot_id)
+                print("Dropzone Distance", distance)
                 
             if state == "DETACH":
-                print(f"ALIGNING {name}")
-                error_theta = -(0.0 - bot_theta)
-                error_theta = math.atan2(math.sin(error_theta), math.cos(error_theta))
-                print(error_theta)
-                self.calculate_publish(0,0,error_theta,dt,bot_id)
-                if (abs(error_theta)< self.goal_limit['theta']):
-                    self.pid_x.reset()
-                    self.pid_y.reset()
-                    self.pid_theta.reset()
-                    self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0])
-                    if not lnk_detach:
-                        self.detach(f"{name}",crate)
-                        bot_data["link_detach"] = True
-                    self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],45.0)
-                    if self.unassigned_crates:
+                req = Attach.Request()
+                req.robot_id = bot_id
+                req.flag = False
+                res = Attach.Response()
+                self.attach_callback(req, res)
+                print(res.success)
+                self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],155.0,80.0)
+                if self.unassigned_crates:
                         left_crate = self.unassigned_crates.pop(0)
                         bot_data["crate_id"] = left_crate
                         bot_data["goal"] = self.crate_positions[left_crate]
                         bot_data["link_attached"] = False 
                         bot_data["link_detach"] = False
-                        bot_data["state"] = "ALIGN"
-                    else: 
-                        bot_data["state"] = "DOCK"
-                    continue  
+                        bot_data["state"] = "APPROACH"
+                else: 
+                    bot_data["state"] = "DOCK"
+                continue  
+
 
             if state == "DOCK":
                 goal_x,goal_y,_ = dock
                 error_x = goal_x - bot_x 
                 error_y = goal_y - bot_y
                 distance = math.sqrt(error_x*error_x + error_y*error_y)
-                e_x_robot =  math.cos(bot_theta)*error_x + math.sin(bot_theta)*error_y
-                e_y_robot = -math.sin(bot_theta)*error_x + math.cos(bot_theta)*error_y
-                self.calculate_publish(e_x_robot,e_y_robot,0,dt,bot_id)
                 if (distance < 25):
                     self.pid_x.reset()
                     self.pid_y.reset()
                     self.pid_theta.reset()
-                    self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],0.0,0.0)
+                    self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],155.0,50.0)
                     bot_data["state"] = "DONE"
+                    return
+                
+                self.calculate_publish(error_x,error_y,0,dt,bot_id)
+                print("Dock distance", distance)
             
             if state == "DONE":
+                print(f"Bot {name} has completed its task.")
                 continue 
 
-    def calculate_publish(self, ex, ey, eomega, dt):
+    def calculate_publish(self, ex, ey, eomega, dt,id):
         if dt <= 1e-4:
             return
     
-        _,_,bot_theta = self.current_pose
+        _,_,bot_theta = self.bots[id]["pose"]
         vx = self.pid_x.compute(ex, dt)
         vy = self.pid_y.compute(ey, dt)
         omega = self.pid_theta.compute(eomega, dt)
@@ -402,13 +416,13 @@ class HolonomicPIDController(Node):
         wheel_vel = np.linalg.pinv(self.array) @ np.array([-x_std, y_std, omega])
 
         wheel_vel = wheel_vel/self.MAX
-        self.publish_wheel_velocities(wheel_vel, 90.0)
+        self.publish_wheel_velocities(id,wheel_vel, 180.0, 80.0)
     
     
     def publish_mqtt(self, topic,payload):
         self.mqtt_client.publish(topic, json.dumps(payload), qos=1,retain=False)
 
-    def publish_wheel_velocities(self, id,wheel_vel=[0.0,0.0,0.0],arm_state=75.0, elbow=80.0):
+    def publish_wheel_velocities(self, id,wheel_vel=[0.0,0.0,0.0],arm_state=155.0, elbow=80.0):
         bot_msg_array = BotCmdArray()
         bot_msg = BotCmd()
         bot_msg.id = id
@@ -424,23 +438,11 @@ class HolonomicPIDController(Node):
                 "m1": wheel_vel[0],
                 "m2": wheel_vel[1],
                 "m3": wheel_vel[2],
-                "arm": {"base": 85.0, "elbow": elbow}
+                "arm": {"base": arm_state, "elbow": 80.0}
             }
             self.publish_mqtt(f"esp/cmd/{id}", payload)
             print("MQTT CMD:", wheel_vel)
 
-    # ---------------- Publisher ----------------
-    # def publish_wheel_velocities(self,id,wheel_vel=[0.0,0.0,0.0],arm_state = 0.0, elbow = 90.0):
-    #     bot_msg_array = BotCmdArray()
-    #     bot_msg = BotCmd()
-    #     bot_msg.id = id
-    #     bot_msg.m1 = float(wheel_vel[0])
-    #     bot_msg.m2 = float(wheel_vel[1])
-    #     bot_msg.m3 = float(wheel_vel[2])
-    #     bot_msg.base = float(arm_state)
-    #     bot_msg.elbow = float(elbow)
-    #     bot_msg_array.cmds.append(bot_msg)
-    #     self.publisher.publish(bot_msg_array)
 
 
 
