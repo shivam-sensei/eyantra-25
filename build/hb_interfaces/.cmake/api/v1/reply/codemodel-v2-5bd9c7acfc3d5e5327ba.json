@@ -1,0 +1,233 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"childIndexes" : 
+					[
+						1
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-.-cf5f8e6a0c9db3b50a18.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.12"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						5,
+						6,
+						7,
+						8,
+						9,
+						10,
+						11,
+						12,
+						13,
+						14,
+						15,
+						16,
+						17
+					]
+				},
+				{
+					"build" : "hb_interfaces__py",
+					"jsonFile" : "directory-hb_interfaces__py-35615142885647c00e71.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.12"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "/home/dream_hell/hb_ws2/src/eyrc-25-26-holo-battalion/build/hb_interfaces/hb_interfaces__py",
+					"targetIndexes" : 
+					[
+						4
+					]
+				}
+			],
+			"name" : "",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0,
+						1
+					],
+					"name" : "hb_interfaces",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						4,
+						5,
+						6,
+						7,
+						8,
+						9,
+						10,
+						11,
+						12,
+						13,
+						14,
+						15,
+						16,
+						17
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "ament_cmake_python_build_hb_interfaces_egg::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ament_cmake_python_build_hb_interfaces_egg-eeea14fca86af283c2fe.json",
+					"name" : "ament_cmake_python_build_hb_interfaces_egg",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "ament_cmake_python_copy_hb_interfaces::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ament_cmake_python_copy_hb_interfaces-61ec07ddbb38509fc9e3.json",
+					"name" : "ament_cmake_python_copy_hb_interfaces",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "hb_interfaces::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-hb_interfaces-94068c29867d703f2c75.json",
+					"name" : "hb_interfaces",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "hb_interfaces__cpp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-hb_interfaces__cpp-ce3d3be189d7d3b16531.json",
+					"name" : "hb_interfaces__cpp",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 1,
+					"id" : "hb_interfaces__py::@e6bb3c2f9031314f9f55",
+					"jsonFile" : "target-hb_interfaces__py-d0bc250b66d19f8816ab.json",
+					"name" : "hb_interfaces__py",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "hb_interfaces__rosidl_generator_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-hb_interfaces__rosidl_generator_c-3b8417a0f8a2956677a6.json",
+					"name" : "hb_interfaces__rosidl_generator_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "hb_interfaces__rosidl_generator_py::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-hb_interfaces__rosidl_generator_py-f8d3b68b92b2ab1d367b.json",
+					"name" : "hb_interfaces__rosidl_generator_py",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "hb_interfaces__rosidl_typesupport_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-hb_interfaces__rosidl_typesupport_c-909dc7e1397b878eba0d.json",
+					"name" : "hb_interfaces__rosidl_typesupport_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "hb_interfaces__rosidl_typesupport_c__pyext::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-hb_interfaces__rosidl_typesupport_c__pyext-3a281844ced0069d5ba5.json",
+					"name" : "hb_interfaces__rosidl_typesupport_c__pyext",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "hb_interfaces__rosidl_typesupport_cpp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-hb_interfaces__rosidl_typesupport_cpp-0fabdb4f4b07f7c724ff.json",
+					"name" : "hb_interfaces__rosidl_typesupport_cpp",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "hb_interfaces__rosidl_typesupport_fastrtps_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-hb_interfaces__rosidl_typesupport_fastrtps_c-ca0138edb0f79f583cc4.json",
+					"name" : "hb_interfaces__rosidl_typesupport_fastrtps_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "hb_interfaces__rosidl_typesupport_fastrtps_c__pyext::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-hb_interfaces__rosidl_typesupport_fastrtps_c__pyext-d182cff27569e9f2f6a2.json",
+					"name" : "hb_interfaces__rosidl_typesupport_fastrtps_c__pyext",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "hb_interfaces__rosidl_typesupport_fastrtps_cpp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-hb_interfaces__rosidl_typesupport_fastrtps_cpp-803b5a6d1c7af8caf8ec.json",
+					"name" : "hb_interfaces__rosidl_typesupport_fastrtps_cpp",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "hb_interfaces__rosidl_typesupport_introspection_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-hb_interfaces__rosidl_typesupport_introspection_c-1500c8cf09b448518fe9.json",
+					"name" : "hb_interfaces__rosidl_typesupport_introspection_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "hb_interfaces__rosidl_typesupport_introspection_c__pyext::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-hb_interfaces__rosidl_typesupport_introspection_c__pyext-9d35dd8256c34848a08d.json",
+					"name" : "hb_interfaces__rosidl_typesupport_introspection_c__pyext",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "hb_interfaces__rosidl_typesupport_introspection_cpp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-hb_interfaces__rosidl_typesupport_introspection_cpp-738ecb8bb301bd229192.json",
+					"name" : "hb_interfaces__rosidl_typesupport_introspection_cpp",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "hb_interfaces_uninstall::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-hb_interfaces_uninstall-d179a073c5b061a7fb5b.json",
+					"name" : "hb_interfaces_uninstall",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "uninstall::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-uninstall-b654ab3bc2011145b294.json",
+					"name" : "uninstall",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "/home/dream_hell/hb_ws2/src/eyrc-25-26-holo-battalion/build/hb_interfaces",
+		"source" : "/home/dream_hell/hb_ws2/src/eyrc-25-26-holo-battalion/hb_interfaces"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 3
+	}
+}

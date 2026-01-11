@@ -45,6 +45,12 @@ class HolonomicPIDController(Node):
         self.mqtt_connected = False
         self.MAX = 600.0
 
+        self.zone_lock = {
+            "red": None,
+            "green": None,
+            "blue": None
+        }
+
         try:
             self.get_logger().info(f"Connecting to MQTT Broker at {self.broker_IP}...")
             self.mqtt_client.connect(self.broker_IP, 1883, 60)
@@ -81,7 +87,7 @@ class HolonomicPIDController(Node):
         self.pid_params = {
             'x': {'kp': 4.7, 'ki': 0.0, 'kd': 1.2, 'max_out': self.max_vel},
             'y': {'kp': 4.7, 'ki': 0.0, 'kd': 1.2, 'max_out': self.max_vel},
-            'theta': {'kp': 3.0, 'ki': 0.1, 'kd': 0.3, 'max_out': self.max_vel * 2}
+            'theta': {'kp': 100.0, 'ki': 0.1, 'kd': 5.5, 'max_out': self.max_vel * 2}
         }
         
         self.bots = {
@@ -326,7 +332,7 @@ class HolonomicPIDController(Node):
                 error_x = (goal_x - bot_x )
                 error_y = (goal_y - bot_y)
                 distance = math.sqrt(error_x*error_x + error_y*error_y)
-                if (distance < 180):
+                if (distance < 175):
                     self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],default_arm["base"],default_arm["elbow"])
                     self.pid_x.reset()
                     self.pid_y.reset()
@@ -351,15 +357,52 @@ class HolonomicPIDController(Node):
                 time.sleep(1.0)
                 self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],default_arm["base"],default_arm["elbow"])
                 bot_data["state"] = "DROPZONE"
-            
+            color = self.crate_colour(crate)
+            dropzones = {"red": self.d1, "green": self.d2, "blue": self.d3}
+
             if state== "DROPZONE":
-                dropzones = {"red": self.d1, "green": self.d2, "blue": self.d3}
-                goal_x, goal_y, _ = dropzones[self.crate_colour(crate)]
+                goal_x, goal_y, _ = dropzones[color]
                 error_x = goal_x - bot_x 
                 error_y = goal_y - bot_y
-
+                # Wait for access
+                if self.zone_lock[color] not in (None, bot_id):
+                    # someone else is using zone -> idle
+                    self.publish_wheel_velocities(bot_id,[0,0,0],default_arm["base"],default_arm["elbow"])
+                    print(f"Bot {bot_id} waiting: {color} zone busy by Bot {self.zone_lock[color]}")
+                    continue
+                # Acquire lock if free
+                if self.zone_lock[color] is None:
+                    print(f"Bot {bot_id} acquired {color} zone")
+                    self.zone_lock[color] = bot_id
+                # Now proceed to navigate
                 distance = math.sqrt(error_x*error_x + error_y*error_y)
-                if (distance < 20):
+                if (distance < 210):
+                    self.pid_x.reset()
+                    self.pid_y.reset()
+                    self.pid_theta.reset()
+                    self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],pick_arm["base"],pick_arm["elbow"])
+                    bot_data["state"] = "ZONE_ALIGN"
+                    continue
+                
+                self.calculate_publish(error_x,error_y,0,dt,bot_id, default_arm["base"],default_arm["elbow"])
+                print("Dropzone Distance", distance)
+
+            if state == "ZONE_ALIGN":
+                # if bot_id == 0:
+                #     bot_data["state"] = "DETACH"
+                #     return
+                print("ZONE ALIGNING")
+                goal_x, goal_y, _ = dropzones[color]
+                dx = goal_x - bot_x
+                dy = goal_y - bot_y 
+                angle_to_goal = math.atan2(dy, dx) - math.pi/2
+                error_theta = -(angle_to_goal - bot_theta)
+                error_theta = math.atan2(math.sin(error_theta), math.cos(error_theta))
+                self.publish_wheel_velocities(bot_id,[math.copysign(0.4, error_theta),math.copysign(0.4, error_theta),math.copysign(0.4, error_theta)],pick_arm["base"],pick_arm["elbow"])
+                # theeta = abs(error_theta) - bot_theta
+                # self.calculate_publish(0,0,error_theta,dt,bot_id, pick_arm["base"],pick_arm["elbow"])
+                print("ZONE ALIGN ERROR:",error_theta)
+                if abs(abs(error_theta) - 3.14) < 0.1:
                     self.pid_x.reset()
                     self.pid_y.reset()
                     self.pid_theta.reset()
@@ -367,10 +410,8 @@ class HolonomicPIDController(Node):
                     bot_data["state"] = "DETACH"
                     return
                 
-                self.calculate_publish(error_x,error_y,0,dt,bot_id, default_arm["base"],default_arm["elbow"])
-                print("Dropzone Distance", distance)
-                
             if state == "DETACH":
+                time.sleep(1.0)
                 req = Attach.Request()
                 req.robot_id = bot_id
                 req.flag = False
@@ -378,6 +419,11 @@ class HolonomicPIDController(Node):
                 self.attach_callback(req, res)
                 print(res.success)
                 self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],default_arm["base"],default_arm["elbow"])
+                color = self.crate_colour(crate)
+                if self.zone_lock[color] == bot_id:
+                    print(f"Bot {bot_id} released {color} zone")
+                    self.zone_lock[color] = None
+
                 if self.unassigned_crates:
                         left_crate = self.unassigned_crates.pop(0)
                         bot_data["crate_id"] = left_crate
@@ -389,12 +435,23 @@ class HolonomicPIDController(Node):
                     bot_data["state"] = "DOCK"
                 continue  
 
-
             if state == "DOCK":
                 goal_x,goal_y,_ = dock
                 error_x = goal_x - bot_x 
                 error_y = goal_y - bot_y
                 distance = math.sqrt(error_x*error_x + error_y*error_y)
+                avoid_radius = 330.0    # tune
+                avoid_gain   = 1900.0   # tune
+                cx,cy,_ = self.d1
+                dx_c = bot_x - cx
+                dy_c = bot_y - cy
+                dist = math.sqrt(dx_c*dx_c + dy_c*dy_c)
+                if dist < avoid_radius and dist > 1.0:
+                    rep = (avoid_radius - dist) / avoid_radius
+                    error_x += avoid_gain * rep * (dx_c / dist)
+                    error_y += avoid_gain * rep * (dy_c / dist)
+                
+
                 if (distance < 25):
                     self.pid_x.reset()
                     self.pid_y.reset()

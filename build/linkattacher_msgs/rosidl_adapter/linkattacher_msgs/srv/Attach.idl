@@ -1,0 +1,17 @@
+// generated from rosidl_adapter/resource/srv.idl.em
+// with input from linkattacher_msgs/srv/Attach.srv
+// generated code does not contain a copyright notice
+
+
+module linkattacher_msgs {
+  module srv {
+    struct Attach_Request {
+      int32 robot_id;
+
+      boolean flag;
+    };
+    struct Attach_Response {
+      boolean success;
+    };
+  };
+};

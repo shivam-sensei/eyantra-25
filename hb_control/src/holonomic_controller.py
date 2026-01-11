@@ -52,7 +52,7 @@ class HolonomicPIDController(Node):
             self.get_logger().error(f"Failed to connect to MQTT: {e}")     
         
         
-        self.STATE = "APPROACH"
+        self.STATE = "ALIGN"
         # ---------------- Robot Parameters ----------------
         self.robot_id = None
         self.current_pose = None
@@ -85,7 +85,7 @@ class HolonomicPIDController(Node):
         self.pid_params = {
             'x': {'kp': 4.7, 'ki': 0.00, 'kd': 1.2, 'max_out': self.max_vel},
             'y': {'kp': 4.7, 'ki': 0.00, 'kd': 1.2, 'max_out': self.max_vel},
-            'theta': {'kp': 3.0, 'ki': 0.00, 'kd': 0.3, 'max_out': self.max_vel * 2}
+            'theta': {'kp': 10.0, 'ki': 0.00, 'kd': 2.5, 'max_out': self.max_vel * 2}
         }
 
         # Initialize PIDs
@@ -191,6 +191,7 @@ class HolonomicPIDController(Node):
 
         #Current pose
         bot_x, bot_y, bot_theta = self.current_pose
+        print("Current Pose:",self.current_pose)
         goal_x, goal_y, goal_theta = self.goalpose
         dx = goal_x - bot_x
         dy = goal_y - bot_y 
@@ -198,19 +199,29 @@ class HolonomicPIDController(Node):
 
         if self.STATE == "ALIGN":
             print("ALIGNING")
-            error_theta = (angle_to_goal - bot_theta)
+            # goal_x, goal_y, _ = self.d1
+            bot_x, bot_y, bot_theta = self.current_pose
+            # print("Current Pose:",self.current_pose)
+            dx = goal_x - bot_x
+            dy = goal_y - bot_y 
+            angle_to_goal = math.atan2(dy, dx) - math.pi/2
+            error_theta = -(angle_to_goal - bot_theta)
+            error_theta = math.atan2(math.sin(error_theta), math.cos(error_theta))
+            print(error_theta)
+            self.calculate_publish(0,0,error_theta,dt)
+            if abs(error_theta) - bot_theta < 0.1:
             # print(angle_to_goal,error_theta,",",bot_theta)
-            print("IR TRIGGERED:",self.ir_triggered)
-            if self.ir_triggered:
-                self.pid_x.reset()
-                self.pid_y.reset()
-                self.pid_theta.reset()
-                self.publish_wheel_velocities([0.0,0.0,0.0],180.0,80.0)
-                self.ir_triggered = False
-                self.STATE = "LINK"
-                return
-            # self.calculate_publish(0,0,30.0,dt)
-            self.publish_wheel_velocities([0.4,0.4,0.4],155.0,80.0)
+            
+            # print("IR TRIGGERED:",self.ir_triggered)
+            # if error_theta < 1.5:
+            #     self.pid_x.reset()
+            #     self.pid_y.reset()
+            #     self.pid_theta.reset()
+            #     self.publish_wheel_velocities([0.0,0.0,0.0],155.0,80.0)
+            #     # self.STATE = "LINK"
+            #     return
+            
+            # self.publish_wheel_velocities([0.4,0.4,0.4],155.0,80.0)
             
         if self.STATE == "APPROACH":
             error_x = (goal_x - bot_x )
@@ -252,7 +263,7 @@ class HolonomicPIDController(Node):
             error_theta = math.atan2(math.sin(error_theta), math.cos(error_theta))
 
             distance = math.sqrt(error_x*error_x + error_y*error_y)
-            if (distance < 20):
+            if (distance < 50):
                 self.pid_x.reset()
                 self.pid_y.reset()
                 self.pid_theta.reset()
@@ -313,7 +324,7 @@ class HolonomicPIDController(Node):
         wheel_vel = np.linalg.pinv(self.array) @ np.array([-x_std, y_std, omega])
 
         wheel_vel = wheel_vel/self.MAX
-        self.publish_wheel_velocities(wheel_vel, 155.0)
+        self.publish_wheel_velocities(wheel_vel, 170.0)
     
     
     def publish_mqtt(self, topic,payload):

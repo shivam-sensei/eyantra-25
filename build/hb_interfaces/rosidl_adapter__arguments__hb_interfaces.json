@@ -1,0 +1,9 @@
+{
+  "package_name": "hb_interfaces",
+  "non_idl_tuples": [
+    "/home/dream_hell/hb_ws2/src/eyrc-25-26-holo-battalion/hb_interfaces:msg/Pose2D.msg",
+    "/home/dream_hell/hb_ws2/src/eyrc-25-26-holo-battalion/hb_interfaces:msg/Poses2D.msg",
+    "/home/dream_hell/hb_ws2/src/eyrc-25-26-holo-battalion/hb_interfaces:msg/BotCmd.msg",
+    "/home/dream_hell/hb_ws2/src/eyrc-25-26-holo-battalion/hb_interfaces:msg/BotCmdArray.msg"
+  ]
+}
