@@ -378,11 +378,11 @@ class HolonomicPIDController(Node):
                 distance = math.sqrt(error_x*error_x + error_y*error_y)
                 if dropzones[color] is self.d3:
                     distance -= 25.0   # fine tune for blue zone
-                if (distance < 220):
+                if (distance < 230):
                     self.pid_x.reset()
                     self.pid_y.reset()
                     self.pid_theta.reset()
-                    self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],pick_arm["base"],pick_arm["elbow"])
+                    self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],default_arm["base"],default_arm["elbow"])
                     bot_data["state"] = "ZONE_ALIGN"
                     continue
                 
