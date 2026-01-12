@@ -65,7 +65,7 @@ class HolonomicPIDController(Node):
         }
 
         # ---------------- Goal Definitions ----------------
-        self.d1 = [1219,1200,0]
+        self.d1 = [1210,1200,0]
         self.d2 = [820,2000.5,0]
         self.d3= [1616,2000.5,0]
         self.dock_crystal = [1218.0,205.0,0.0]
@@ -85,8 +85,8 @@ class HolonomicPIDController(Node):
         
         # ---------------- PID Parameters ----------------
         self.pid_params = {
-            'x': {'kp': 4.7, 'ki': 0.0, 'kd': 1.2, 'max_out': self.max_vel},
-            'y': {'kp': 4.7, 'ki': 0.0, 'kd': 1.2, 'max_out': self.max_vel},
+            'x': {'kp': 4.7, 'ki': 0.0, 'kd': 1.7, 'max_out': self.max_vel},
+            'y': {'kp': 4.7, 'ki': 0.0, 'kd': 1.7, 'max_out': self.max_vel},
             'theta': {'kp': 100.0, 'ki': 0.1, 'kd': 5.5, 'max_out': self.max_vel * 2}
         }
         
@@ -104,7 +104,7 @@ class HolonomicPIDController(Node):
                 "last_time": self.get_clock().now(),
                 "ir_triggered": False,
                 "Default_arm_position": {"base": 160.0, "elbow": 80.0},
-                "Pick_arm_position": {"base": 172.0, "elbow": 80.0},
+                "Pick_arm_position": {"base": 176.0, "elbow": 80.0},
                 
             },
             2: { 
@@ -119,8 +119,8 @@ class HolonomicPIDController(Node):
                 "pid_theta": PID(**self.pid_params['theta']),
                 "last_time": self.get_clock().now(),
                 "ir_triggered": False,
-                "Default_arm_position": {"base": 155.0, "elbow": 80.0},
-                "Pick_arm_position": {"base": 170.0, "elbow": 80.0},
+                "Default_arm_position": {"base": 50.0, "elbow": 80.0},
+                "Pick_arm_position": {"base": 75.0, "elbow": 80.0},
             },
             4: { 
                 "state": "APPROACH",
@@ -135,7 +135,7 @@ class HolonomicPIDController(Node):
                 "last_time": self.get_clock().now(),
                 "ir_triggered": False,
                 "Default_arm_position": {"base": 155.0, "elbow": 80.0},
-                "Pick_arm_position": {"base": 177.0, "elbow": 80.0},
+                "Pick_arm_position": {"base": 180.0, "elbow": 80.0},
             }
         }
 
@@ -332,7 +332,7 @@ class HolonomicPIDController(Node):
                 error_x = (goal_x - bot_x )
                 error_y = (goal_y - bot_y)
                 distance = math.sqrt(error_x*error_x + error_y*error_y)
-                if (distance < 175):
+                if (distance < 185):
                     self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],default_arm["base"],default_arm["elbow"])
                     self.pid_x.reset()
                     self.pid_y.reset()
@@ -362,7 +362,7 @@ class HolonomicPIDController(Node):
 
             if state== "DROPZONE":
                 goal_x, goal_y, _ = dropzones[color]
-                error_x = goal_x - bot_x 
+                error_x = goal_x - bot_x
                 error_y = goal_y - bot_y
                 # Wait for access
                 if self.zone_lock[color] not in (None, bot_id):
@@ -376,7 +376,9 @@ class HolonomicPIDController(Node):
                     self.zone_lock[color] = bot_id
                 # Now proceed to navigate
                 distance = math.sqrt(error_x*error_x + error_y*error_y)
-                if (distance < 210):
+                if dropzones[color] is self.d3:
+                    distance -= 25.0   # fine tune for blue zone
+                if (distance < 220):
                     self.pid_x.reset()
                     self.pid_y.reset()
                     self.pid_theta.reset()
@@ -402,7 +404,7 @@ class HolonomicPIDController(Node):
                 # theeta = abs(error_theta) - bot_theta
                 # self.calculate_publish(0,0,error_theta,dt,bot_id, pick_arm["base"],pick_arm["elbow"])
                 print("ZONE ALIGN ERROR:",error_theta)
-                if abs(abs(error_theta) - 3.14) < 0.1:
+                if abs(abs(error_theta) - 3.14) < 0.09:
                     self.pid_x.reset()
                     self.pid_y.reset()
                     self.pid_theta.reset()
@@ -437,11 +439,11 @@ class HolonomicPIDController(Node):
 
             if state == "DOCK":
                 goal_x,goal_y,_ = dock
-                error_x = goal_x - bot_x 
-                error_y = goal_y - bot_y
+                error_x = goal_x - bot_x - 40
+                error_y = goal_y - bot_y 
                 distance = math.sqrt(error_x*error_x + error_y*error_y)
-                avoid_radius = 330.0    # tune
-                avoid_gain   = 1900.0   # tune
+                avoid_radius = 340.0    # tune
+                avoid_gain   = 2300.0   # tune
                 cx,cy,_ = self.d1
                 dx_c = bot_x - cx
                 dy_c = bot_y - cy
