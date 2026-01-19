@@ -424,9 +424,11 @@ class HolonomicPIDController(Node):
                 goal_x, goal_y, _ = dropzones[color]
                 dx = goal_x - bot_x
                 dy = goal_y - bot_y 
-                angle_to_goal = math.atan2(dy, dx) - math.pi/2
-                error_theta = -(angle_to_goal - bot_theta)
-                error_theta = math.atan2(math.sin(error_theta), math.cos(error_theta))
+                # angle_to_goal = math.atan2(dy, dx) - math.pi/2
+                angle_to_goal = math.atan2(dy, dx)
+                error_theta = (angle_to_goal - bot_theta)
+                # error_theta = math.atan2(math.sin(error_theta), math.cos(error_theta))
+                error_theta = math.atan2(math.sin(error_theta)) #normalize
                 self.publish_wheel_velocities(bot_id,[math.copysign(0.4, error_theta),math.copysign(0.4, error_theta),math.copysign(0.4, error_theta)],default_arm["base"],default_arm["elbow"])
                 # theeta = abs(error_theta) - bot_theta
                 # self.calculate_publish(0,0,error_theta,dt,bot_id, pick_arm["base"],pick_arm["elbow"])
