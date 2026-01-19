@@ -380,8 +380,8 @@ class HolonomicPIDController(Node):
             dropzones = {"red": self.d1, "green": self.d2, "blue": self.d3}
             BOT_OFFSETS = {
                 0: (0, 0),
-                4: (-190, 0),     # shift right
-                2: (250, 0),    # shift left
+                4: (-151, 0),     # shift right
+                2: (151, 0),    # shift left
             }
 
             if state== "DROPZONE": 
@@ -405,7 +405,7 @@ class HolonomicPIDController(Node):
                 distance = math.sqrt(error_x*error_x + error_y*error_y)
                 if dropzones[color] is self.d3:
                     distance -= 25.0   # fine tune for blue zone
-                if (distance < 50):
+                if (distance < 30):
                     self.pid_x.reset()
                     self.pid_y.reset()
                     self.pid_theta.reset()
@@ -424,23 +424,34 @@ class HolonomicPIDController(Node):
                 goal_x, goal_y, _ = dropzones[color]
                 dx = goal_x - bot_x
                 dy = goal_y - bot_y 
-                # angle_to_goal = math.atan2(dy, dx) - math.pi/2
-                angle_to_goal = math.atan2(dy, dx)
+                angle_to_goal = math.atan2(dy, dx) + math.pi/2
                 error_theta = (angle_to_goal - bot_theta)
-                # error_theta = math.atan2(math.sin(error_theta), math.cos(error_theta))
-                error_theta = math.atan2(math.sin(error_theta)) #normalize
-                self.publish_wheel_velocities(bot_id,[math.copysign(0.4, error_theta),math.copysign(0.4, error_theta),math.copysign(0.4, error_theta)],default_arm["base"],default_arm["elbow"])
-                # theeta = abs(error_theta) - bot_theta
-                # self.calculate_publish(0,0,error_theta,dt,bot_id, pick_arm["base"],pick_arm["elbow"])
+                error_theta = math.atan2(math.sin(error_theta), math.cos(error_theta)) #normalize
+                max_w = 0.4
+                min_w = 0.15
+                Kp_theta = 0.9
+                # abs_error_theta=abs(error_theta)
+                omega = Kp_theta * abs(error_theta)
+                omega = min(max_w, omega)
+                omega = max(min_w, omega)
+                omega *=math.copysign(1, error_theta)
                 print("ZONE ALIGN ERROR:",error_theta)
-                if abs(abs(error_theta) - 3.14) < 0.1:
+                # if abs(abs(error_theta) - 3.14) < 0.1:
+                #     self.pid_x.reset()
+                #     self.pid_y.reset()
+                #     self.pid_theta.reset()
+                #     self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],pick_arm["base"],pick_arm["elbow"])
+                #     bot_data["state"] = "DETACH"
+                #     return
+                if abs(error_theta) < 0.1:
                     self.pid_x.reset()
                     self.pid_y.reset()
                     self.pid_theta.reset()
                     self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],pick_arm["base"],pick_arm["elbow"])
+                    time.sleep(0.1)
                     bot_data["state"] = "DETACH"
                     return
-                
+                self.publish_wheel_velocities(bot_id,[omega, omega, omega],pick_arm["base"]-5,pick_arm["elbow"])
             if state == "DETACH":
                 time.sleep(1.0)
                 req = Attach.Request()
