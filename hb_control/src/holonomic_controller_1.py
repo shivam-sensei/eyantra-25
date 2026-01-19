@@ -37,13 +37,14 @@ class HolonomicPIDController(Node):
     def __init__(self):
         super().__init__('holonomic_pid_controller')
         # ---------------- MQTT Client Setup ----------------
-        self.broker_IP = "10.125.32.63"
+        self.broker_IP = "10.125.32.225"
         self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
         self.mqtt_client.on_connect = self.on_connect
         self.mqtt_client.on_message = self.on_message
         self.mqtt_client.on_disconnect = self.on_disconnect
         self.mqtt_connected = False
         self.MAX = 600.0
+        self.last_print_time = self.get_clock().now()
 
         self.zone_lock = {
             "red": None,
@@ -65,9 +66,9 @@ class HolonomicPIDController(Node):
         }
 
         # ---------------- Goal Definitions ----------------
-        self.d1 = [1210,1200,0]
-        self.d2 = [820,2000.5,0]
-        self.d3= [1616,2000.5,0]
+        self.d1 = [1210,1230,0]
+        self.d2 = [820,1998,0]
+        self.d3= [1618,1998,0]
         self.dock_crystal = [1218.0,205.0,0.0]
         
         self.crate_positions = {}
@@ -105,6 +106,7 @@ class HolonomicPIDController(Node):
                 "ir_triggered": False,
                 "Default_arm_position": {"base": 160.0, "elbow": 80.0},
                 "Pick_arm_position": {"base": 176.0, "elbow": 80.0},
+                "distance":145
                 
             },
             2: { 
@@ -119,8 +121,9 @@ class HolonomicPIDController(Node):
                 "pid_theta": PID(**self.pid_params['theta']),
                 "last_time": self.get_clock().now(),
                 "ir_triggered": False,
-                "Default_arm_position": {"base": 50.0, "elbow": 80.0},
-                "Pick_arm_position": {"base": 75.0, "elbow": 80.0},
+                "Default_arm_position": {"base": 50.0, "elbow": 25.0},
+                "Pick_arm_position": {"base": 75.0, "elbow": 25.0},
+                "distance":180
             },
             4: { 
                 "state": "APPROACH",
@@ -136,17 +139,19 @@ class HolonomicPIDController(Node):
                 "ir_triggered": False,
                 "Default_arm_position": {"base": 155.0, "elbow": 80.0},
                 "Pick_arm_position": {"base": 180.0, "elbow": 80.0},
+                "distance":150
             }
         }
 
         # ---------------- ROS 2 Publishers & Subscribers ----------------
         self.bot_sub = self.create_subscription(Poses2D,'/bot_pose', self.bot_pose_cb,10)
+        self.bot_pose_cb
         self.crate_sub = self.create_subscription(Poses2D,'/crate_pose', self.crate_pose_cb,10)
         #SERVICES
         self.attach = self.create_service(Attach,"/Attach",self.attach_callback)
         self.publisher = self.create_publisher(BotCmdArray, '/bot_cmd', 10)
         # ---------------- Timer for Control Loop ----------------
-        self.timer = self.create_timer(0.03, self.control_cb)
+        self.timer = self.create_timer(0.05, self.control_cb)
 
     def attach_callback(self,request,response):
         if request.flag:
@@ -182,7 +187,7 @@ class HolonomicPIDController(Node):
         payload = msg.payload.decode()
         bot_id = int(topic.split("/")[-1])
         self.bots[bot_id]["ir_triggered"] = (payload == "0.00")
-
+    
     def bot_pose_cb(self, msg):
         for pose in msg.poses:
             if pose.id in self.bots:
@@ -206,8 +211,12 @@ class HolonomicPIDController(Node):
                     
 
         # Try assigning crates if not done
-        if not self.crate_assignment_done and len(self.crate_positions) > 0:
+        if  (not self.crate_assignment_done
+            and self.crate_positions
+            and any(bot["pose"] is not None for bot in self.bots.values())):
+            print("kuch kuch hota hai")
             self.assign_crates_to_bots()
+            print("Assigning crates")
             self.crate_assignment_done = True
 
     
@@ -215,71 +224,80 @@ class HolonomicPIDController(Node):
         a = id%3
         if a == 0:
             color = "red"
+            print("red")
         elif a == 1:
             color = "green"
+            print("green")
         else:
             color = "blue"
+            print("blue")
         return color
     
     def assign_crates_to_bots(self):
-    # Wait for bot poses
-        bot_positions = {}
-        while True:
-            bot_positions = {
-                bot_id: bot_data["pose"]
-                for bot_id, bot_data in self.bots.items()
-                if bot_data["pose"] is not None
-            }
-            if bot_positions:
-                break
-            time.sleep(0.2)
-
-        bots = list(bot_positions.keys())
-        available_crates = {
-            cid: cpose for cid, cpose in self.crate_positions.items()
-            if cid not in self.assigned_crates
+        # collect bot positions (non-blocking)
+        bot_positions = {
+            bot_id: bot_data["pose"]
+            for bot_id, bot_data in self.bots.items()
+            if bot_data["pose"] is not None
         }
-        crates = list(available_crates.keys())
 
-        if not crates:
-            print("[DEBUG] No crates available")
+        if not bot_positions:
+            self.get_logger().warn(
+                "[ASSIGN] No bot poses yet, skipping crate assignment"
+            )
             return
 
-        # Build cost matrix
+        available_crates = {
+            cid: cpose
+            for cid, cpose in self.crate_positions.items()
+            if cid not in self.assigned_crates
+        }
+
+        if not available_crates:
+            self.get_logger().warn("[ASSIGN] No crates available")
+            return
+
+        bots = list(bot_positions.keys())
+        crates = list(available_crates.keys())
+
         cost = np.zeros((len(bots), len(crates)), dtype=float)
 
         for i, bot_id in enumerate(bots):
             bx, by, _ = bot_positions[bot_id]
             for j, cid in enumerate(crates):
                 cx, cy, _ = available_crates[cid]
-                cost[i, j] = math.sqrt((cx - bx)**2 + (cy - by)**2)
+                cost[i, j] = math.hypot(cx - bx, cy - by)
 
-        # Hungarian assignment
-        row_ind, col_ind =linear_sum_assignment(cost)
-
-        assigned = set()
-
+        row_ind, col_ind = linear_sum_assignment(cost)
 
         for r, c in zip(row_ind, col_ind):
             bot_id = bots[r]
             crate_id = crates[c]
 
-            # assign goal
             self.bots[bot_id]["crate_id"] = crate_id
             self.bots[bot_id]["goal"] = available_crates[crate_id]
-            assigned.add(crate_id)
+            self.assigned_crates.add(crate_id)
 
-            print(f"[OPT] Bot {bot_id} gets crate {crate_id} (cost={cost[r,c]:.2f})")
+            self.get_logger().info(
+                f"[ASSIGN] Bot {bot_id} → Crate {crate_id} (cost={cost[r,c]:.2f})"
+            )
 
-        # bookkeeping
-        self.assigned_crates |= assigned
-        remaining = set(self.crate_positions.keys()) - self.assigned_crates
-        self.unassigned_crates = list(remaining)
+        self.unassigned_crates = list(
+            set(self.crate_positions.keys()) - self.assigned_crates
+        )
 
-        print("[DEBUG] Assigned crates:", self.assigned_crates)
-        print("[DEBUG] Remaining unassigned:", self.unassigned_crates)
+        self.crate_assignment_done = True
+
     # ---------------- Control Loop ----------------
     def control_cb(self):
+        now = self.get_clock().now()
+        if (now - self.last_print_time).nanoseconds > 2e9: # Print every 2 seconds
+            for bid, bdata in self.bots.items():
+                self.get_logger().info(f"STATUS: Bot {bid} chasing Crate {bdata['crate_id']}")
+                self.last_print_time = now
+
+
+
         for bot_id,bot_data in self.bots.items():
             name = bot_data["name"]
             state = bot_data["state"]
@@ -293,6 +311,9 @@ class HolonomicPIDController(Node):
             self.pid_theta = bot_data["pid_theta"]
             default_arm = bot_data["Default_arm_position"]
             pick_arm = bot_data["Pick_arm_position"]
+
+
+        
 
             if(botPose is None):
                 continue  
@@ -329,10 +350,11 @@ class HolonomicPIDController(Node):
                 self.publish_wheel_velocities(bot_id,[0.4,0.4,0.4],default_arm["base"],default_arm["elbow"])
                 
             if state == "APPROACH":
+                dist = bot_data["distance"]
                 error_x = (goal_x - bot_x )
                 error_y = (goal_y - bot_y)
                 distance = math.sqrt(error_x*error_x + error_y*error_y)
-                if (distance < 185):
+                if (distance < dist):
                     self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],default_arm["base"],default_arm["elbow"])
                     self.pid_x.reset()
                     self.pid_y.reset()
@@ -345,9 +367,6 @@ class HolonomicPIDController(Node):
                 
             if state == "LINK":
                 self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],pick_arm["base"],pick_arm["elbow"])
-                # time.sleep(2.0) # wait for stability
-                # self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],177.0,55.0)
-                # time.sleep(1.0)
                 req = Attach.Request()
                 req.robot_id = bot_id
                 req.flag = True
@@ -359,9 +378,17 @@ class HolonomicPIDController(Node):
                 bot_data["state"] = "DROPZONE"
             color = self.crate_colour(crate)
             dropzones = {"red": self.d1, "green": self.d2, "blue": self.d3}
+            BOT_OFFSETS = {
+                0: (0, 0),
+                4: (4.5, 2),     # shift right
+                2: (-4.7, -2),    # shift left
+            }
 
-            if state== "DROPZONE":
+            if state== "DROPZONE": 
                 goal_x, goal_y, _ = dropzones[color]
+                ox, oy = BOT_OFFSETS.get(bot_id, (0, 0))
+                goal_x += ox                                
+                goal_y += oy
                 error_x = goal_x - bot_x
                 error_y = goal_y - bot_y
                 # Wait for access
@@ -400,11 +427,11 @@ class HolonomicPIDController(Node):
                 angle_to_goal = math.atan2(dy, dx) - math.pi/2
                 error_theta = -(angle_to_goal - bot_theta)
                 error_theta = math.atan2(math.sin(error_theta), math.cos(error_theta))
-                self.publish_wheel_velocities(bot_id,[math.copysign(0.4, error_theta),math.copysign(0.4, error_theta),math.copysign(0.4, error_theta)],pick_arm["base"],pick_arm["elbow"])
+                self.publish_wheel_velocities(bot_id,[math.copysign(0.4, error_theta),math.copysign(0.4, error_theta),math.copysign(0.4, error_theta)],default_arm["base"],default_arm["elbow"])
                 # theeta = abs(error_theta) - bot_theta
                 # self.calculate_publish(0,0,error_theta,dt,bot_id, pick_arm["base"],pick_arm["elbow"])
                 print("ZONE ALIGN ERROR:",error_theta)
-                if abs(abs(error_theta) - 3.14) < 0.09:
+                if abs(abs(error_theta) - 3.14) < 0.1:
                     self.pid_x.reset()
                     self.pid_y.reset()
                     self.pid_theta.reset()
@@ -420,7 +447,7 @@ class HolonomicPIDController(Node):
                 res = Attach.Response()
                 self.attach_callback(req, res)
                 print(res.success)
-                self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],default_arm["base"],default_arm["elbow"])
+                self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],pick_arm["base"],pick_arm["elbow"])
                 color = self.crate_colour(crate)
                 if self.zone_lock[color] == bot_id:
                     print(f"Bot {bot_id} released {color} zone")
@@ -519,9 +546,16 @@ class HolonomicPIDController(Node):
 def main(args=None):
     rclpy.init(args=args)
     controller = HolonomicPIDController()
-    rclpy.spin(controller)
-    controller.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(controller)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        # Crucial for fast restarts!
+        controller.mqtt_client.loop_stop()
+        controller.mqtt_client.disconnect()
+        controller.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':
