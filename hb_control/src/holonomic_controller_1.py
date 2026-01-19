@@ -380,8 +380,8 @@ class HolonomicPIDController(Node):
             dropzones = {"red": self.d1, "green": self.d2, "blue": self.d3}
             BOT_OFFSETS = {
                 0: (0, 0),
-                4: (4.5, 2),     # shift right
-                2: (-4.7, -2),    # shift left
+                4: (-190, 0),     # shift right
+                2: (250, 0),    # shift left
             }
 
             if state== "DROPZONE": 
@@ -405,7 +405,7 @@ class HolonomicPIDController(Node):
                 distance = math.sqrt(error_x*error_x + error_y*error_y)
                 if dropzones[color] is self.d3:
                     distance -= 25.0   # fine tune for blue zone
-                if (distance < 230):
+                if (distance < 50):
                     self.pid_x.reset()
                     self.pid_y.reset()
                     self.pid_theta.reset()
@@ -462,7 +462,7 @@ class HolonomicPIDController(Node):
                         bot_data["state"] = "APPROACH"
                 else: 
                     bot_data["state"] = "DOCK"
-                continue  
+                continue 
 
             if state == "DOCK":
                 goal_x,goal_y,_ = dock
