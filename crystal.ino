@@ -1,18 +1,17 @@
 #include "WiFi.h"
 #include "PubSubClient.h"
-#include <string.h>  // For strcmp
+#include <string.h>  
 #include <ArduinoJson.h>
 #include <ESP32Servo.h>
 #include <Arduino.h>
-//for OTA updates
 #include <ESPmDNS.h>
 #include <NetworkUdp.h>
 #include <ArduinoOTA.h>
 
 
-const char* ssid = "A.T.O.M_Labs";       // Replace with your actual WiFi SSID
-const char* password = "atom281121";  // Replace with your actual WiFi password
-const char* broker_ip = "192.168.100.12"; // Replace with your broker's IP
+const char* ssid = "Yoo";       
+const char* password = "tanishk1234"; 
+const char* broker_ip = "10.125.32.63"; 
 const int broker_port = 1883;
 #define CLIENT_ID "ESPClient1"
 #define CMD_TOPIC "esp/cmd/1"
@@ -35,9 +34,9 @@ const int PWM_CHANNEL = 0;
 const int PWM_FREQ = 1000;    // 1 kHz
 const int PWM_RES = 8;
 
-const int PULLIN_MS = 300;    // full power time to pull-in (ms)
-const int HOLD_MS = 2000;     // how long to hold for test (ms)
-const int OFF_MS = 1000;      // off time (ms)
+const int PULLIN_MS = 300;   
+const int HOLD_MS = 2000;  
+const int OFF_MS = 1000;     
 const int HOLD_DUTY = 255;
 const int PWM_NEUTRAL = 1495;
 const int PWM_MIN = 845;
@@ -50,7 +49,6 @@ WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 
 void servo_init(){
-  // Allow allocation of all timers
   ESP32PWM::allocateTimer(0);
   ESP32PWM::allocateTimer(1);
   ESP32PWM::allocateTimer(2);
@@ -110,14 +108,12 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
             return;
         }
 
-        // Extract values from JSON
         m1 = doc["m1"];
         m2 = doc["m2"];
         m3 = doc["m3"];
         base_angle = doc["arm"]["base"];
         elbow_angle = doc["arm"]["elbow"];
         mos_status = doc["mos"];
-
 
         m1 = vel_to_pwm(m1);
         m2 = vel_to_pwm(m2);
@@ -217,7 +213,6 @@ void setup() {
         type = "filesystem";
       }
 
-      // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
       Serial.println("Start updating " + type);
     })
     .onEnd([]() {

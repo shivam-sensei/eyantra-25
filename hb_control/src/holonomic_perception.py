@@ -164,7 +164,7 @@ class PoseDetector(Node):
 
                 x_obs, y_obs = self.pixel_to_world(centre_x, centre_y)
 
-                marker_h = 92.25 if marker_id in {0,2,4} else 50.0
+                marker_h = 90.25 if marker_id in {2,4} else 0.0
                 Z_marker = Z_CAM - marker_h
                 scale = Z_marker / Z_CAM
 
