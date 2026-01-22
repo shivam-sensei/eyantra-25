@@ -66,8 +66,8 @@ class HolonomicPIDController(Node):
         }
 
         # ---------------- Goal Definitions ----------------
-        self.d1 = [1210,1230,0]
-        self.d2 = [820,1998,0]
+        self.d1  = [820,1998,0]
+        self.d2 = [1210,1230,0]
         self.d3= [1618,1998,0]
         self.dock_crystal = [1218.0,205.0,0.0]
         
@@ -379,7 +379,7 @@ class HolonomicPIDController(Node):
             color = self.crate_colour(crate)
             dropzones = {"red": self.d1, "green": self.d2, "blue": self.d3}
             BOT_OFFSETS = {
-                0: (0, 0),
+                0: (-100, 0),
                 4: (-151, 0),     # shift right
                 2: (151, 0),    # shift left
             }
