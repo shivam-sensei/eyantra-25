@@ -364,6 +364,23 @@ class HolonomicPIDController(Node):
                     self.pid_theta.reset()
                     bot_data["state"] = "ALIGN"
                     return
+                
+                for id in self.dropped_crates:
+                    if id == crate:
+                        continue
+
+                    if id in self.crate_positions:
+                        cx,cy,_ = self.crate_positions[id]
+                        avoid_radius = 250.0 
+                        dx_c = bot_x - cx
+                        dy_c = bot_y - cy
+                        dist = math.sqrt(dx_c*dx_c + dy_c*dy_c)
+                        if dist < avoid_radius and dist > 1.0:
+                            rep = (avoid_radius - dist) / avoid_radius
+                            avoid_gain = 1900.0   # tune
+                            error_x += avoid_gain * rep * (dx_c / dist)
+                            error_y += avoid_gain * rep * (dy_c / dist)
+
                 # ---- Bot-to-Bot collision avoidance ----
                 for other_id, other_pose in bot_positions.items():
                     if other_id == bot_id:
@@ -380,12 +397,12 @@ class HolonomicPIDController(Node):
                         # Assign deterministic priority based on bot id
                         if bot_id < other_id:
                             # bot_id has priority → proceed faster
-                            speed_scale = 1.0
+                            speed_scale = 2.0
                         else:
                             # other bot has priority → slow down this bot
                             # slow increases smoothly when closer
                             rep = (avoid_bot_radius - dist_b) / avoid_bot_radius
-                            speed_scale = max(0.2, 1.0 - rep)  # never freeze completely
+                            speed_scale = max(0.1, 1.0 - rep)  # never freeze completely
                         break
                 else:
                     speed_scale = 1.0  # default no slowdown
@@ -433,7 +450,7 @@ class HolonomicPIDController(Node):
                     self.zone_lock[color] = bot_id
                 # Now proceed to navigate
                 distance = math.sqrt(error_x*error_x + error_y*error_y)
-                if dropzones[color] is self.d3:
+                if dropzones[color] in [self.d2,self.d3]:
                     distance -= 25.0   # fine tune for blue zone
                 if (distance < 30):
                     self.pid_x.reset()
@@ -442,6 +459,23 @@ class HolonomicPIDController(Node):
                     self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],default_arm["base"],default_arm["elbow"])
                     bot_data["state"] = "ZONE_ALIGN"
                     continue
+
+                for id in self.dropped_crates:
+                    if id == crate:
+                        continue
+
+                    if id in self.crate_positions:
+                        cx,cy,_ = self.crate_positions[id]
+                        avoid_radius = 120.0 
+                        dx_c = bot_x - cx
+                        dy_c = bot_y - cy
+                        dist = math.sqrt(dx_c*dx_c + dy_c*dy_c)
+                        if dist < avoid_radius and dist > 1.0:
+                            rep = (avoid_radius - dist) / avoid_radius
+                            avoid_gain = 1900.0   # tune
+                            error_x += avoid_gain * rep * (dx_c / dist)
+                            error_y += avoid_gain * rep * (dy_c / dist)
+                            
                  # ---- Bot-to-Bot collision avoidance ----
                 for other_id, other_pose in bot_positions.items():
                     if other_id == bot_id:
@@ -458,12 +492,12 @@ class HolonomicPIDController(Node):
                         # Assign deterministic priority based on bot id
                         if bot_id < other_id:
                             # bot_id has priority → proceed faster
-                            speed_scale = 1.0
+                            speed_scale = 2.0
                         else:
                             # other bot has priority → slow down this bot
                             # slow increases smoothly when closer
                             rep = (avoid_bot_radius - dist_b) / avoid_bot_radius
-                            speed_scale = max(0.2, 1.0 - rep)  # never freeze completely
+                            speed_scale = max(0.1, 1.0 - rep)  # never freeze completely
                         break
                 else:
                     speed_scale = 1.0  # default no slowdown
@@ -497,6 +531,7 @@ class HolonomicPIDController(Node):
                     bot_data["state"] = "DETACH"
                     return
                 self.publish_wheel_velocities(bot_id,[omega, omega, omega],pick_arm["base"]-5,pick_arm["elbow"])
+
             if state == "DETACH":
                 time.sleep(1.0)
                 req = Attach.Request()
@@ -540,13 +575,13 @@ class HolonomicPIDController(Node):
 
                     if id in self.crate_positions:
                         cx,cy,_ = self.crate_positions[id]
-                        avoid_radius = 150.0 
+                        avoid_radius = 250.0 
                         dx_c = bot_x - cx
                         dy_c = bot_y - cy
                         dist = math.sqrt(dx_c*dx_c + dy_c*dy_c)
                         if dist < avoid_radius and dist > 1.0:
                             rep = (avoid_radius - dist) / avoid_radius
-                            avoid_gain = 1700.0   # tune
+                            avoid_gain = 1900.0   # tune
                             error_x += avoid_gain * rep * (dx_c / dist)
                             error_y += avoid_gain * rep * (dy_c / dist)
 
@@ -558,7 +593,7 @@ class HolonomicPIDController(Node):
                     bot_data["state"] = "DONE"
                     return
                 
-                 # ---- Bot-to-Bot collision avoidance ----
+                # ---- Bot-to-Bot collision avoidance ----
                 for other_id, other_pose in bot_positions.items():
                     if other_id == bot_id:
                         continue
