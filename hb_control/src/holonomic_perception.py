@@ -159,7 +159,7 @@ class PoseDetector(Node):
 
             cx, cy = self.camera_matrix[0, 2], self.camera_matrix[1, 2]
             Px, Py = self.pixel_to_world(cx, cy)
-            Z_CAM = 2425.0
+            Z_CAM = 2562.0
 
             cv2.aruco.drawDetectedMarkers(undistorted, corners, ids)
 
@@ -173,7 +173,7 @@ class PoseDetector(Node):
 
                 x_obs, y_obs = self.pixel_to_world(cxp, cyp)
 
-                marker_h = 93.5 if mid in {0, 2, 4} else 50.0
+                marker_h = 75.0 if mid in {0, 2, 4} else 50.0
                 scale = (Z_CAM - marker_h) / Z_CAM
 
                 x_corr = Px + (x_obs - Px) * scale
