@@ -11,13 +11,13 @@
 
 const char* ssid = "Yoo";       
 const char* password = "tanishk1234"; 
-const char* broker_ip = "10.125.32.63"; 
+const char* broker_ip = "zzazZAaaaaa"; 
 const int broker_port = 1883;
 #define CLIENT_ID "ESPClient1"
-#define CMD_TOPIC "esp/cmd/1"
-#define SENSOR_TOPIC "esp/sensor/1"
+#define CMD_TOPIC "esp/cmd/0"
+#define SENSOR_TOPIC "esp/sensor/0"
 #define LED_TOPIC "esp/led"
-#define MOS_TOPIC "esp/mos"
+#define MOS_TOPIC "esp/mos/0"
 Servo servo1; 
 Servo servo2; 
 Servo servo3; 

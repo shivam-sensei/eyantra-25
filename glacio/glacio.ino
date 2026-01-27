@@ -4,30 +4,28 @@
 #include <ArduinoJson.h>
 #include <ESP32Servo.h>
 #include <Arduino.h>
-//for OTA updates
 #include <ESPmDNS.h>
 #include <NetworkUdp.h>
 #include <ArduinoOTA.h>
 
 
-const char* ssid = "Yoo";       
-const char* password = "tanishk1234";  
-const char* broker_ip = "10.125.32.63"; 
+const char* ssid = "Yoo";    
+const char* password = "tanishk1234"; 
+const char* broker_ip = "10.137.144.48"; 
 const int broker_port = 1883;
-#define CLIENT_ID "ESP2"
-#define CMD_TOPIC "esp/cmd/2"
-#define SENSOR_TOPIC "esp/sensor/2"
+#define CLIENT_ID "ESP4"
+#define CMD_TOPIC "esp/cmd/4"
+#define SENSOR_TOPIC "esp/sensor/4"
 #define LED_TOPIC "esp/led"
-#define MOS_TOPIC "esp/mos/2"
+#define MOS_TOPIC "esp/mos/4"
 Servo servo1; 
 Servo servo2; 
 Servo servo3; 
 Servo elbow;
 Servo base;
-#define bot_name "frostbite_red"
 // Defining pins
-#define servo1_pin  25
-#define servo2_pin  27
+#define servo1_pin  27
+#define servo2_pin  25
 #define servo3_pin  26
 #define base_pin   33
 #define elbow_pin    32
@@ -56,8 +54,8 @@ void servo_init(){
   ESP32PWM::allocateTimer(2);
   ESP32PWM::allocateTimer(3);
 
-  servo1.setPeriodHertz(50);   
-  servo1.attach(servo1_pin, 500, 2400); 
+  servo1.setPeriodHertz(50);    // Standard 50hz servo
+  servo1.attach(servo1_pin, 500, 2400); // Attach with min/max pulses
   
   servo2.setPeriodHertz(50);
   servo2.attach(servo2_pin, 500, 2400);
@@ -109,7 +107,6 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
             return;
         }
 
-        // Extract values from JSON
         m1 = doc["m1"];
         m2 = doc["m2"];
         m3 = doc["m3"];
@@ -122,7 +119,6 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
         m2 = vel_to_pwm(m2);
         m3 = vel_to_pwm(m3);
 
-        // Command Servos
         servo1.write(m1);
         servo2.write(m2);
         servo3.write(m3);
@@ -141,7 +137,6 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
       return;
     }
 
-    //extracting values
     mos_status = mos_doc["status"];
     if (mos_status == 1){
       ledcWrite(SOL_PIN, 255); // full power
@@ -207,7 +202,6 @@ void setup() {
     mqttClient.setCallback(mqttCallback);
     ledcAttach(SOL_PIN, PWM_FREQ, PWM_RES);
     ledcWrite(SOL_PIN, 0);   // MOSFET OFF initially
-    ArduinoOTA.setHostname(bot_name);
     ArduinoOTA
     .onStart([]() {
       String type;
