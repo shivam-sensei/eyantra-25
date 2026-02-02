@@ -53,9 +53,9 @@ class HolonomicPIDController(Node):
         }
         self.dropzone_slots = {"red": [], "green": [], "blue": []}
         self.dropzone_offsets = {
-            "red":  [(-200,60), (170,-90), (0,0)],
+            "red":  [(-162,0), (-238,0), (0,0)],
             "blue": [(160,0), (-160,0), (0,0)],
-            "green":[(160,0), (-160,0), (0,0)]
+            "green":[(200,0), (-160,0), (0,0)]
         }
         self.dropzone_count = {
             "red": 0,
@@ -79,7 +79,7 @@ class HolonomicPIDController(Node):
         }
 
         # ---------------- Goal Definitions ----------------
-        self.d1 = [1210,1220,0]
+        self.d1 = [1230,1226,0]
         self.d2 = [820,2036,0]
         self.d3= [1618,2036,0]
         self.dock_crystal = [1218.0,205.0,0.0]
@@ -119,8 +119,9 @@ class HolonomicPIDController(Node):
                 "ir_triggered": False,
                 "Default_arm_position": {"base": 160.0, "elbow": 80.0},
                 "Pick_arm_position": {"base": 176.0, "elbow": 80.0},
-                "distance":150,
-                "drop_slot":None
+                "distance":146,
+                "drop_slot":None,
+                "align_stop_time" : None
                 
             },
             2: { 
@@ -138,7 +139,8 @@ class HolonomicPIDController(Node):
                 "Default_arm_position": {"base": 50.0, "elbow": 25.0},
                 "Pick_arm_position": {"base": 75.0, "elbow": 25.0},
                 "distance":175,
-                "drop_slot":None
+                "drop_slot":None,
+                "align_stop_time" : None
             },
             4: { 
                 "state": "APPROACH",
@@ -152,10 +154,11 @@ class HolonomicPIDController(Node):
                 "pid_theta": PID(**self.pid_params['theta']),
                 "last_time": self.get_clock().now(),
                 "ir_triggered": False,
-                "Default_arm_position": {"base": 155.0, "elbow": 80.0},
-                "Pick_arm_position": {"base": 180.0, "elbow": 80.0},
-                "distance":140,
-                "drop_slot":None
+                "Default_arm_position": {"base": 135.0, "elbow": 75.0},
+                "Pick_arm_position": {"base": 165.0, "elbow": 75.0},
+                "distance":147,
+                "drop_slot":None,
+                "align_stop_time" : None
             }
         }
 
@@ -219,7 +222,7 @@ class HolonomicPIDController(Node):
         self.get_logger().warn("Disconnected from MQTT broker")
 
     def crate_pose_cb(self, msg):
-        allowed = {12,30,16,13}
+        allowed = {12,30,16,13,21}
         for pose in msg.poses:
             crate_id = pose.id
             if crate_id not in allowed:
@@ -330,6 +333,7 @@ class HolonomicPIDController(Node):
             self.pid_theta = bot_data["pid_theta"]
             default_arm = bot_data["Default_arm_position"]
             pick_arm = bot_data["Pick_arm_position"]
+            
 
             if(botPose is None):
                 continue  
@@ -362,11 +366,13 @@ class HolonomicPIDController(Node):
                         self.crateAlignCounter +=1
                         continue
                     else:
-                        # if bot_id == 4:
-                        #     time.sleep(0.35)
                         self.pid_x.reset() 
                         self.pid_y.reset()
                         self.pid_theta.reset()
+                        self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],pick_arm["base"],pick_arm["elbow"])
+                        self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],pick_arm["base"],pick_arm["elbow"])
+                        time.sleep(0.05)
+                        self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],pick_arm["base"],pick_arm["elbow"])
                         self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],pick_arm["base"],pick_arm["elbow"])
                         bot_data["ir_triggered"] = False
                         self.crateAlignCounter =0
@@ -400,7 +406,7 @@ class HolonomicPIDController(Node):
                         dist = math.sqrt(dx_c*dx_c + dy_c*dy_c)
                         if dist < avoid_radius and dist > 1.0:
                             rep = (avoid_radius - dist) / avoid_radius
-                            avoid_gain = 1900.0   # tune
+                            avoid_gain = 2000.0   # tune
                             error_x += avoid_gain * rep * (dx_c / dist)
                             error_y += avoid_gain * rep * (dy_c / dist)
 
@@ -429,24 +435,21 @@ class HolonomicPIDController(Node):
                 
             if state == "LINK":
                 self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],pick_arm["base"],pick_arm["elbow"])
+                self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],pick_arm["base"],pick_arm["elbow"])
                 req = Attach.Request()
                 req.robot_id = bot_id
                 req.flag = True
                 res = Attach.Response()
                 self.attach_callback(req, res)
                 print(res.success)
-                time.sleep(1.0)
                 self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],default_arm["base"],default_arm["elbow"])
                 color = self.crate_colour(crate)
-
                 # assign slot ONCE
                 if bot_data["drop_slot"] is None:
                     self.assign_dropzone_slot(bot_id, color)
                     bot_data["drop_slot"] = self.dropzone_slots[color].index(bot_id)
                     print(f"[SLOT ASSIGNED] Bot {bot_id} → {color} slot {bot_data['drop_slot']}")
-
                 bot_data["state"] = "DROPZONE"
-
             color = self.crate_colour(crate)
             dropzones = {"red": self.d1, "green": self.d2, "blue": self.d3}
 
@@ -476,7 +479,7 @@ class HolonomicPIDController(Node):
                 error_y = goal_y - bot_y
                 distance = math.hypot(error_x, error_y)
 
-                if (distance < 20):
+                if (distance < 15):
                     self.pid_x.reset()
                     self.pid_y.reset()
                     self.pid_theta.reset()
@@ -490,13 +493,13 @@ class HolonomicPIDController(Node):
 
                     if id in self.crate_positions:
                         cx,cy,_ = self.crate_positions[id]
-                        avoid_radius = 120.0 
+                        avoid_radius = 180.0 
                         dx_c = bot_x - cx
                         dy_c = bot_y - cy
                         dist = math.sqrt(dx_c*dx_c + dy_c*dy_c)
                         if dist < avoid_radius and dist > 1.0:
                             rep = (avoid_radius - dist) / avoid_radius
-                            avoid_gain = 1700.0   # tune
+                            avoid_gain = 2100.0   # tune
                             error_x += avoid_gain * rep * (dx_c / dist)
                             error_y += avoid_gain * rep * (dy_c / dist)
                 # ---- Bot-to-Bot repulsion (vector-based) ----
@@ -529,8 +532,7 @@ class HolonomicPIDController(Node):
                     error_x = mid_x - bot_x
                     error_y = mid_y - bot_y
                     distance = math.hypot(error_x, error_y)
-
-                    if distance < 20:
+                    if distance < 15:
                         bot_data["stack_phase"] = "ALIGN"
                         self.pid_x.reset()
                         self.pid_y.reset()
@@ -550,7 +552,7 @@ class HolonomicPIDController(Node):
                             dist = math.sqrt(dx_c*dx_c + dy_c*dy_c)
                             if dist < avoid_radius and dist > 1.0:
                                 rep = (avoid_radius - dist) / avoid_radius
-                                avoid_gain = 1700.0   # tune
+                                avoid_gain = 1900.0   # tune
                                 error_x += avoid_gain * rep * (dx_c / dist)
                                 error_y += avoid_gain * rep * (dy_c / dist)
                     # ---- Bot-to-Bot repulsion (vector-based) ----
@@ -569,39 +571,62 @@ class HolonomicPIDController(Node):
                             rep = (avoid_bot_radius - dist_b) / avoid_bot_radius
                             error_x += avoid_bot_gain * rep * (dx_b / dist_b)
                             error_y += avoid_bot_gain * rep * (dy_b / dist_b)
-                    self.calculate_publish(error_x, error_y, 0, dt, bot_id, default_arm["base"], default_arm["elbow"])
+                    self.calculate_publish(error_x, error_y, 0, dt, bot_id, 150.0, 180.0)
                     print("Stacking Approach Distance:", distance)
                 
                 if bot_data["stack_phase"] == "ALIGN":
-                    goal_x, goal_y, _ = self.computemidpoint()
+                    coords = []
+                    for crate_id in self.dropped_crates:
+                        if crate_id in {12, 30} and crate_id in self.crate_positions:
+                            cx, cy, _ = self.crate_positions[crate_id]
+                            coords.append((cx, cy))
+
+                    if len(coords) < 2:
+                        return 1236.0, 1226.0
+
+                    (x1, y1), (x2, y2) = coords[0], coords[1]
+
+                    midx = ((x1 + x2) / 2.0) - 34
+                    midy = (y1 + y2) / 2.0
+                    goal_x,goal_y = midx,midy
                     dx = goal_x - bot_x
                     dy = goal_y - bot_y
                     angle_to_goal = math.atan2(dy, dx) + math.pi/2   # matches your approach convention
                     error_theta = math.atan2(math.sin(angle_to_goal - bot_theta), math.cos(angle_to_goal - bot_theta))
+                    max_w = 0.4
+                    min_w = 0.15
+                    Kp_theta = 0.9
 
                     omega = Kp_theta * abs(error_theta)
                     omega = min(max_w, max(min_w, omega))
                     omega *= math.copysign(1, error_theta)
 
-                    if abs(error_theta) < 0.1:
-                        self.publish_wheel_velocities(bot_id, [0.0,0.0,0.0],100.0 , 80.0 )
-                        time.sleep(0.3)
-                        bot_data["stack_phase"] = "DROP"
-                        return
+                    if abs(error_theta) < 0.03:
+                        self.publish_wheel_velocities(bot_id, [0.0,0.0,0.0],150.0 , 180.0 )
+                        if bot_data["align_stop_time"] is None:
+                            bot_data["align_stop_time"] = time.time()
+                            return
 
-                    self.publish_wheel_velocities(bot_id, [omega, omega, omega], 100.0, default_arm["elbow"])
+                        # Wait for 2 seconds (non-blocking)
+                        if time.time() - bot_data["align_stop_time"] >= 2.0:
+                            bot_data["align_stop_time"] = None
+                            bot_data["stack_phase"] = "DROP"
+                            return
+                       
+                    self.publish_wheel_velocities(bot_id, [omega, omega, omega], 150.0, 180.0)
                     return
                 
                 if bot_data["stack_phase"] == "DROP":
                     req = Attach.Request()
                     req.robot_id = bot_id
                     req.flag = False
+                    for i in range(30):
+                        self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],150.0+i,180.0)
+                        time.sleep(0.12)
+                    color = self.crate_colour(crate)
                     res = Attach.Response()
                     self.attach_callback(req, res)
                     print(res.success)
-                    self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],100.0,pick_arm["elbow"])
-                    time.sleep(0.5)
-                    color = self.crate_colour(crate)
 
                     if bot_id in self.dropzone_slots[color]:
                         self.dropzone_slots[color].remove(bot_id)
@@ -631,8 +656,8 @@ class HolonomicPIDController(Node):
             if state == "ZONE_ALIGN":
                 print("ZONE ALIGNING")
                 goal_x, goal_y, _ = dropzones[color]
-                dx = goal_x - bot_x
-                dy = goal_y - bot_y 
+                dx = goal_x - bot_x 
+                dy = goal_y - bot_y
                 angle_to_goal = math.atan2(dy, dx) + math.pi/2
                 error_theta = (angle_to_goal - bot_theta)
                 error_theta = math.atan2(math.sin(error_theta), math.cos(error_theta)) #normalize
@@ -646,12 +671,14 @@ class HolonomicPIDController(Node):
                 omega = max(min_w, omega)
                 omega *=math.copysign(1, error_theta)
                 print("ZONE ALIGN ERROR:",error_theta)
-                if abs(error_theta) < 0.1:
+                if abs(error_theta) < 0.03:
                     self.pid_x.reset()
                     self.pid_y.reset()
                     self.pid_theta.reset()
                     self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],pick_arm["base"],pick_arm["elbow"])
-                    time.sleep(0.5)
+                    time.sleep(0.2)
+                    self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],pick_arm["base"],pick_arm["elbow"])
+                    
                     bot_data["state"] = "DETACH"
                     return
                 self.publish_wheel_velocities(bot_id,[omega, omega, omega],default_arm["base"]-5,default_arm["elbow"])
@@ -661,9 +688,11 @@ class HolonomicPIDController(Node):
                 req.robot_id = bot_id
                 req.flag = False
                 res = Attach.Response()
+                self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],pick_arm["base"],pick_arm["elbow"])
+                time.sleep(0.2)
+                self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],pick_arm["base"],pick_arm["elbow"])
                 self.attach_callback(req, res)
                 print(res.success)
-                self.publish_wheel_velocities(bot_id,[0.0,0.0,0.0],pick_arm["base"],pick_arm["elbow"])
                 color = self.crate_colour(crate)
 
                 if bot_id in self.dropzone_slots[color]:
@@ -671,8 +700,6 @@ class HolonomicPIDController(Node):
                 
                 bot_data["drop_slot"] = None
                 self.dropzone_count[color] += 1
-
-                
                 self.dropped_crates.append(crate)
 
                 if self.zone_lock[color] == bot_id:
@@ -702,13 +729,13 @@ class HolonomicPIDController(Node):
 
                     if id in self.crate_positions:
                         cx,cy,_ = self.crate_positions[id]
-                        avoid_radius = 260.0 
+                        avoid_radius = 300.0 
                         dx_c = bot_x - cx
                         dy_c = bot_y - cy
                         dist = math.sqrt(dx_c*dx_c + dy_c*dy_c)
                         if dist < avoid_radius and dist > 1.0:
                             rep = (avoid_radius - dist) / avoid_radius
-                            avoid_gain = 2100.0   # tune
+                            avoid_gain = 3000.0   # tune
                             error_x += avoid_gain * rep * (dx_c / dist)
                             error_y += avoid_gain * rep * (dy_c / dist)
 
@@ -771,9 +798,9 @@ class HolonomicPIDController(Node):
         L = math.hypot(nx, ny)
         nx /= L
         ny /= L
-        d = 70.0 
-        goal_x = midx + nx * d
-        goal_y = midy + ny * d
+        d = 210.0 
+        goal_x = midx - nx * d
+        goal_y = midy - ny * d
         return goal_x, goal_y
 
 
