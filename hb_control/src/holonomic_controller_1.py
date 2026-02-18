@@ -53,7 +53,7 @@ class HolonomicPIDController(Node):
         }
         self.dropzone_slots = {"red": [], "green": [], "blue": []}
         self.dropzone_offsets = {
-            "red":  [(-162,0), (-238,0), (0,0)],
+            "red":  [(-162,0), (-232,0), (0,0)],
             "blue": [(160,0), (-160,0), (0,0)],
             "green":[(200,0), (-160,0), (0,0)]
         }
@@ -222,7 +222,7 @@ class HolonomicPIDController(Node):
         self.get_logger().warn("Disconnected from MQTT broker")
 
     def crate_pose_cb(self, msg):
-        allowed = {12,30,16,13,21}
+        allowed = {12,30,16,13,21,8}
         for pose in msg.poses:
             crate_id = pose.id
             if crate_id not in allowed:
@@ -845,6 +845,24 @@ class HolonomicPIDController(Node):
             }
             self.publish_mqtt(f"esp/cmd/{id}", payload)
             print("MQTT CMD:", wheel_vel)
+    def end(self):
+        payload = {
+            "m1": 0.0,
+            "m2": 0.0,
+            "m3": 0.0,
+            "arm": {"base": 90, "elbow": 90}
+        }
+
+        for topic_id in [0, 2, 4]:
+            result = self.mqtt_client.publish(f"esp/cmd/{topic_id}", json.dumps(payload))
+            result.wait_for_publish()
+
+    def destroy_node(self):
+        self.end()
+        rclpy.spin_once(self,timeout_sec=0.1)
+        super().destroy_node()
+        
+
 
 
 # ---------------------- Main Function -------------------------------------
@@ -856,10 +874,9 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
-        # Crucial for fast restarts!
+        controller.destroy_node()
         controller.mqtt_client.loop_stop()
         controller.mqtt_client.disconnect()
-        controller.destroy_node()
         rclpy.shutdown()
 
 
