@@ -12,12 +12,11 @@ from hb_interfaces.msg import Pose2D, Poses2D
 class PoseDetector(Node):
     def __init__(self):
         super().__init__('localization_node')
-        self.homography_ready = False
         # Initialize CvBridge for image conversion
         self.bridge = CvBridge()
         self.bot_ids = [0, 2, 4]
         self.ref_ids = [1, 3, 5, 7]
-        
+        self.alpha = 0.1   
         # ---------- PARAMETERS ----------
         self.crates_marker_length = 0.05  # Set marker size in meters
         self.bots_marker_length = 0.05    # Set bot marker size in meters
@@ -88,58 +87,49 @@ class PoseDetector(Node):
 
             undistorted_img = cv2.undistort(img, self.camera_matrix, self.dist_coeffs, None, None)
             gray = cv2.cvtColor(undistorted_img, cv2.COLOR_RGB2GRAY)
-
-            # self.get_logger().info("Step 4: Applying CLAHE")
-            # clahe = cv2.createCLAHE(clipLimit=0.7, tileGridSize=(2, 2))
-            # gray_processed = clahe.apply(gray)
-
-            # self.get_logger().info("Step 5: Applying Gaussian blur")
             gray_processed = cv2.GaussianBlur(gray, (3, 3), 0)
 
             corners, ids, rejected = self.detector.detectMarkers(gray_processed)
 
             if ids is None or len(ids) == 0:
                 self.get_logger().warn("No markers detected")
-                
                 return
 
             markers = {ids[i][0]: corners[i][0] for i in range(len(ids))}
             print(ids)
+            required_ids = [1, 3, 5, 7]
 
-            if not self.homography_ready:
-                required_ids = [1, 3, 5, 7]
+            if all(i in ids.flatten().tolist() for i in required_ids):
 
-                if not all(i in ids.flatten().tolist() for i in required_ids):
-                    self.get_logger().warn("Waiting for all markers (1,3,5,7)...")
-                    
-                    return
-
-                self.pixel_matrix = np.array([
+                pixel_matrix = np.array([
                     markers[1][0],
                     markers[3][1],
                     markers[5][3],
                     markers[7][2],
                 ], dtype=np.float32)
 
-                self.world_matrix = np.array([
+                world_matrix = np.array([
                     [0, 0],
                     [2438.4, 0],
                     [0, 2438.4],
                     [2438.4, 2438.4]
                 ], dtype=np.float32)
 
-                self.H_matrix, _ = cv2.findHomography(
-                    self.pixel_matrix,
-                    self.world_matrix
-                )
+                H_new, _ = cv2.findHomography(pixel_matrix, world_matrix)
 
-                if self.H_matrix is None:
-                    self.get_logger().error("Homography computation failed")
-                    
-                    return
+                if H_new is not None:
 
-                self.homography_ready = True
-                self.get_logger().info("Homography locked successfully")
+                    if self.H_matrix is None:
+                        self.H_matrix = H_new
+                        self.get_logger().info("Homography initialized")
+                    else:
+                        # Exponential moving average
+                        self.H_matrix = (
+                            (1 - self.alpha) * self.H_matrix
+                            + self.alpha * H_new
+                        )
+            if self.H_matrix is None:
+                return
 
 
             r, t, _ = self.my_estimatePoseSingleMarkers(
@@ -159,9 +149,8 @@ class PoseDetector(Node):
                     continue
 
                 pts = markers[marker_id]
-                centre_x = pts[:, 0].mean()
-                centre_y = pts[:, 1].mean()
-
+                centre_x = (pts[0][0] + pts[2][0]) * 0.5
+                centre_y = (pts[0][1] + pts[2][1]) * 0.5
                 x_obs, y_obs = self.pixel_to_world(centre_x, centre_y)
 
                 marker_h = 75.25 if marker_id in {0,2,4} else 50.0
@@ -232,7 +221,7 @@ class PoseDetector(Node):
         poses_msg = Poses2D()
         # Publish all detected crates
         for detected_id, (x, y, yaw) in self.detected_crates.items():
-            if detected_id in self.bot_ids or detected_id in self.ref_ids:
+            if detected_id in self.bot_ids or detected_id in self.ref_ids or detected_id not in {11,30,21,16,44,9,23}:
                 continue
             crate_pose = Pose2D()
             crate_pose.id = int(detected_id)
